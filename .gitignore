@@ -1,0 +1,25 @@
+*.iml
+.gradle
+/local.properties
+/.idea/
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Binary files - strict clean-room enforcement (zero proprietary binaries)
+*.apk
+*.aab
+*.zip
+*.tar.gz
+*.tgz
+*.so
+*.aar
+*.jar
+*.pyc
+__pycache__/
+
+# App build outputs
+app/build/

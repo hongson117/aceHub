@@ -1,0 +1,13 @@
+<resources>
+    <color name="background">#0F141C</color>
+    <color name="surface">#1A2230</color>
+    <color name="primary">#00E676</color>
+    <color name="primary_variant">#00B248</color>
+    <color name="accent">#2979FF</color>
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#90A4AE</color>
+    <color name="status_green">#00E676</color>
+    <color name="status_yellow">#FFD600</color>
+    <color name="status_red">#FF1744</color>
+    <color name="overlay_bg">#CC0A0E14</color>
+</resources>
