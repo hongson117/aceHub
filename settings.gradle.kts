@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "acestream-solver"
+rootProject.name = "aceHub"
 include(":app")

@@ -2,9 +2,8 @@ package vn.lienson.acesport.g2probe.engine
 
 import android.content.Context
 import android.os.Build
-import android.system.Os
-import android.system.OsConstants
 import android.util.Log
+import vn.lienson.acesport.g2probe.AppLogger
 import java.io.BufferedReader
 import java.io.File
 import java.io.FileInputStream
@@ -19,23 +18,15 @@ class EmbeddedAceRuntime(private val context: Context) {
 
     companion object {
         private const val TAG = "EmbeddedAceRuntime"
-        private const val ABI_ARM64 = "arm64-v8a"
         private const val ABI_ARM32 = "armeabi-v7a"
     }
 
     private val appContext = context.applicationContext
-    val abi: String = selectSupportedAbi() ?: ABI_ARM32
+    // Always use armeabi-v7a to match 32-bit Linux engine & bundled libacepython.so
+    val abi: String = ABI_ARM32
     private var process: Process? = null
     private var logThread: Thread? = null
     @Volatile private var stopping = false
-
-    private fun selectSupportedAbi(): String? {
-        for (supported in Build.SUPPORTED_ABIS) {
-            if (ABI_ARM32 == supported) return ABI_ARM32
-            if (ABI_ARM64 == supported) return ABI_ARM64
-        }
-        return null
-    }
 
     fun rootDir(): File {
         return File(appContext.filesDir, "aceserve/$abi")
@@ -46,18 +37,19 @@ class EmbeddedAceRuntime(private val context: Context) {
     }
 
     private fun zipName(): String {
-        return if (ABI_ARM32 == abi) "ace-armeabi-v7a.zip" else "ace-arm64-v8a.zip"
+        return "ace-armeabi-v7a.zip"
     }
 
     @Synchronized
     @Throws(IOException::class)
     fun prepare() {
         val root = rootDir()
-        val marker = File(root, ".prepared-ace-$abi-v4")
+        val marker = File(root, ".prepared-ace-$abi-v5")
         if (!marker.exists()) {
-            Log.i(TAG, "Preparing embedded AceStream engine for ABI $abi...")
+            AppLogger.i("ENGINE", "Chuẩn bị môi trường AceStream Linux ($abi)...")
             deleteRecursively(root)
             if (!root.mkdirs() && !root.isDirectory) {
+                AppLogger.e("ENGINE", "Không thể tạo thư mục: ${root.absolutePath}")
                 throw IOException("Cannot create $root")
             }
 
@@ -66,39 +58,46 @@ class EmbeddedAceRuntime(private val context: Context) {
             val tempZip = File(appContext.cacheDir, zipName())
             var unpacked = false
             try {
+                AppLogger.i("ENGINE", "Đang nạp bộ cài nhúng: $assetZipPath...")
                 AssetCopier.copyFile(appContext, assetZipPath, tempZip)
+                AppLogger.i("ENGINE", "Đang giải nén bộ cài Engine (dung lượng ~${tempZip.length() / (1024 * 1024)} MB)...")
                 unzip(tempZip, root)
                 tempZip.delete()
                 unpacked = true
-                Log.i(TAG, "Unpacked embedded AceStream runtime from assets")
-            } catch (_: Exception) {
-                Log.i(TAG, "No embedded engine asset found. Downloading official runtime...")
+                AppLogger.s("ENGINE", "Giải nén bộ cài Engine thành công!")
+            } catch (e: Exception) {
+                AppLogger.w("ENGINE", "Không tìm thấy bộ cài nhúng trong assets (${e.message}). Thử tải từ máy chủ chính thức...")
             }
 
             if (!unpacked) {
                 try {
+                    AppLogger.i("ENGINE", "Bắt đầu tải Engine chính thức từ máy chủ AceStream...")
                     val downloaded = AceEngineDownloader.downloadOfficialEngine(appContext)
+                    AppLogger.i("ENGINE", "Đang giải nén tệp tải về: ${downloaded.name}...")
                     AceEngineDownloader.unpackEngine(downloaded, root)
                     downloaded.delete()
                     unpacked = true
-                    Log.i(TAG, "Official engine downloaded and unpacked successfully")
+                    AppLogger.s("ENGINE", "Tải và giải nén Engine chính thức thành công!")
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to download official engine: ${e.message}", e)
+                    AppLogger.e("ENGINE", "Lỗi tải Engine: ${e.message}", e)
                     throw IOException("Could not prepare engine: ${e.message}", e)
                 }
             }
 
             if (unpacked) {
                 marker.createNewFile()
-                Log.i(TAG, "AceStream runtime prepared successfully at $root")
+                AppLogger.s("ENGINE", "Runtime Engine Linux đã sẵn sàng tại: ${root.absolutePath}")
             }
+        } else {
+            AppLogger.s("ENGINE", "Runtime Engine Linux đã có sẵn trong bộ nhớ.")
         }
 
         // Always copy main_android.py
         try {
             AssetCopier.copyFile(appContext, "aceserve/main_android.py", File(root, "main_android.py"))
+            AppLogger.d("ENGINE", "Đã cập nhật main_android.py")
         } catch (e: Exception) {
-            Log.w(TAG, "Could not copy main_android.py from assets: ${e.message}")
+            AppLogger.w("ENGINE", "Không thể chép main_android.py: ${e.message}")
         }
     }
 
@@ -106,7 +105,7 @@ class EmbeddedAceRuntime(private val context: Context) {
     @Throws(IOException::class)
     fun start() {
         if (process != null && process?.isAlive == true) {
-            Log.i(TAG, "Engine process already running")
+            AppLogger.i("ENGINE", "Tiến trình Engine đang chạy sẵn (Alive)")
             return
         }
 
@@ -117,12 +116,15 @@ class EmbeddedAceRuntime(private val context: Context) {
         AceServeAndroidInfo.write(appContext, abi, root, cache, androidInfo)
 
         val runner = nativeRunner()
+        AppLogger.i("ENGINE", "Kiểm tra runner thực thi: ${runner.name} (${if (runner.exists()) "CÓ SẴN" else "THIẾU!"})")
         if (!runner.exists()) {
+            AppLogger.e("ENGINE", "THIẾU runner libacepython.so tại: ${runner.absolutePath}")
             throw IOException("Missing native Python runner at: ${runner.absolutePath}")
         }
 
         val mainPy = File(root, "main_android.py")
         if (!mainPy.exists()) {
+            AppLogger.e("ENGINE", "THIẾU main_android.py tại: ${mainPy.absolutePath}")
             throw IOException("Missing main_android.py at: ${mainPy.absolutePath}")
         }
 
@@ -136,7 +138,7 @@ class EmbeddedAceRuntime(private val context: Context) {
             "--log-stdout",
             "--disable-upnp"
         )
-        Log.i(TAG, "Starting engine command: $command")
+        AppLogger.i("ENGINE", "Khởi chạy lệnh Engine: libacepython.so main_android.py (Cache 100MB)")
 
         val builder = ProcessBuilder(command)
         builder.directory(root)
@@ -161,17 +163,22 @@ class EmbeddedAceRuntime(private val context: Context) {
         stopping = false
         val proc = builder.start()
         process = proc
+        AppLogger.s("ENGINE", "Tiến trình Engine đã khởi động thành công!")
 
         logThread = Thread {
             try {
                 BufferedReader(InputStreamReader(proc.inputStream)).use { reader ->
                     var line: String?
                     while (reader.readLine().also { line = it } != null) {
-                        Log.d("EmbeddedAceEngine", line ?: "")
+                        val l = line ?: continue
+                        Log.d("EmbeddedAceEngine", l)
+                        if (l.contains("started on port") || l.contains("ready") || l.contains("Traceback") || l.contains("Error")) {
+                            AppLogger.d("ENGINE_PROC", l)
+                        }
                     }
                 }
             } catch (e: Exception) {
-                if (!stopping) Log.w(TAG, "Log stream ended: ${e.message}")
+                if (!stopping) AppLogger.w("ENGINE", "Đóng luồng đọc log Engine: ${e.message}")
             }
         }.apply {
             isDaemon = true
@@ -183,6 +190,7 @@ class EmbeddedAceRuntime(private val context: Context) {
     fun stop() {
         val proc = process ?: return
         stopping = true
+        AppLogger.i("ENGINE", "Đang dừng tiến trình Engine...")
         proc.destroy()
         try {
             if (!proc.waitFor(3000, TimeUnit.MILLISECONDS)) {
@@ -193,6 +201,7 @@ class EmbeddedAceRuntime(private val context: Context) {
             proc.destroyForcibly()
         }
         process = null
+        AppLogger.s("ENGINE", "Tiến trình Engine đã dừng hoàn toàn.")
     }
 
     @Synchronized
@@ -240,6 +249,9 @@ class EmbeddedAceRuntime(private val context: Context) {
                         while (input.read(buffer).also { read = it } >= 0) {
                             output.write(buffer, 0, read)
                         }
+                    }
+                    if (target.name.endsWith(".so") || target.name == "acestreamengine") {
+                        target.setExecutable(true, false)
                     }
                 }
             }

@@ -1,6 +1,7 @@
 <resources>
     <style name="Theme.AceSportG2Probe" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="android:windowBackground">@color/background</item>
+        <item name="android:windowBackground">#0B0F19</item>
+        <item name="android:windowIsTranslucent">false</item>
         <item name="android:textColor">@color/text_primary</item>
     </style>
 </resources>

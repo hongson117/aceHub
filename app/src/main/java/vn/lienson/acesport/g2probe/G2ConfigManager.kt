@@ -9,6 +9,9 @@ class G2ConfigManager(context: Context) {
         private const val PREF_NAME = "acesport_g2_config"
 
         private const val KEY_AUTO_START_BOOT = "auto_start_boot"
+        private const val KEY_ALWAYS_ON_247 = "always_on_247"
+        private const val KEY_WATCHDOG_AUTO_RECOVER = "watchdog_auto_recover"
+        private const val KEY_HUB_ENABLED = "hub_enabled"
         private const val KEY_ALWAYS_HOT_STREAM = "always_hot_stream"
         private const val KEY_DEFAULT_CHANNEL_ID = "default_channel_id"
         private const val KEY_DEFAULT_SOURCE_TYPE = "default_source_type"
@@ -17,8 +20,8 @@ class G2ConfigManager(context: Context) {
         private const val KEY_ACCESS_TOKEN = "engine_access_token"
         const val DEFAULT_ACCESS_TOKEN = "YA0WKoM9ov"
 
-        // Default: Eleven Sports 1 4K [PL]
-        const val DEFAULT_4K_INFOHASH = "f25b57322b5337df43bfde801e03f70363737581"
+        // Default: Eleven Sports 1 HD [PL]
+        const val DEFAULT_4K_INFOHASH = "73d24aeff6515abb236ea8a3e77d89fe0b04b665"
         const val DEFAULT_SOURCE_TYPE = "infohash"
     }
 
@@ -28,6 +31,18 @@ class G2ConfigManager(context: Context) {
     var isAutoStartBoot: Boolean
         get() = prefs.getBoolean(KEY_AUTO_START_BOOT, true)
         set(value) = prefs.edit().putBoolean(KEY_AUTO_START_BOOT, value).apply()
+
+    var isAlwaysOn247: Boolean
+        get() = prefs.getBoolean(KEY_ALWAYS_ON_247, true)
+        set(value) = prefs.edit().putBoolean(KEY_ALWAYS_ON_247, value).apply()
+
+    var isWatchdogAutoRecover: Boolean
+        get() = prefs.getBoolean(KEY_WATCHDOG_AUTO_RECOVER, true)
+        set(value) = prefs.edit().putBoolean(KEY_WATCHDOG_AUTO_RECOVER, value).apply()
+
+    var isHubEnabled: Boolean
+        get() = prefs.getBoolean(KEY_HUB_ENABLED, true)
+        set(value) = prefs.edit().putBoolean(KEY_HUB_ENABLED, value).apply()
 
     var isAlwaysHotStream: Boolean
         get() = prefs.getBoolean(KEY_ALWAYS_HOT_STREAM, true)

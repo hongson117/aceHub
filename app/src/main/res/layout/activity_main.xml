@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/mainScrollView"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#0B0F19"
@@ -11,7 +11,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="32dp">
+        android:padding="24dp">
 
         <!-- Header -->
         <LinearLayout
@@ -19,11 +19,11 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:layout_marginBottom="24dp">
+            android:layout_marginBottom="16dp">
 
             <ImageView
-                android:layout_width="56dp"
-                android:layout_height="56dp"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
                 android:src="@drawable/app_icon"
                 android:contentDescription="App Icon" />
 
@@ -32,14 +32,14 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:orientation="vertical"
-                android:layout_marginStart="16dp">
+                android:layout_marginStart="14dp">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="ACESTREAM HUB"
                     android:textColor="#38BDF8"
-                    android:textSize="26sp"
+                    android:textSize="22sp"
                     android:textStyle="bold"
                     android:fontFamily="sans-serif-black" />
 
@@ -48,7 +48,7 @@
                     android:layout_height="wrap_content"
                     android:text="Universal Stream Proxy • Headless 24/7 Server • Cổng 8000"
                     android:textColor="#94A3B8"
-                    android:textSize="14sp" />
+                    android:textSize="13sp" />
             </LinearLayout>
 
             <TextView
@@ -57,55 +57,56 @@
                 android:layout_height="wrap_content"
                 android:background="#166534"
                 android:textColor="#4ADE80"
-                android:textSize="14sp"
+                android:textSize="13sp"
                 android:textStyle="bold"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:paddingTop="8dp"
-                android:paddingBottom="8dp"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp"
                 android:text="🟢 ĐANG HOẠT ĐỘNG" />
         </LinearLayout>
 
-        <!-- Main Cards Grid -->
+        <!-- Top Row: Server Info & Controls -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:baselineAligned="false">
+            android:baselineAligned="false"
+            android:layout_marginBottom="16dp">
 
-            <!-- Left Column: Status & Connection -->
+            <!-- Left Column: Server Status & 3 Operational Modes -->
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_weight="1.1"
+                android:layout_weight="1"
                 android:orientation="vertical"
-                android:layout_marginEnd="16dp">
+                android:layout_marginEnd="12dp">
 
-                <!-- Card: Trạng thái & Địa chỉ IP -->
+                <!-- Card 1: IP & Server Info -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:background="#1E293B"
                     android:orientation="vertical"
-                    android:padding="20dp"
-                    android:layout_marginBottom="16dp">
+                    android:padding="16dp"
+                    android:layout_marginBottom="12dp">
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="ĐỊA CHỈ TRẠM PHÁT MẠNG NỘI BỘ (LAN)"
                         android:textColor="#94A3B8"
-                        android:textSize="12sp"
+                        android:textSize="11sp"
                         android:textStyle="bold" />
 
                     <TextView
                         android:id="@+id/tvServerUrl"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="6dp"
+                        android:layout_marginTop="4dp"
                         android:text="http://192.168.1.xxx:8000"
                         android:textColor="#00E676"
-                        android:textSize="24sp"
+                        android:textSize="22sp"
                         android:textStyle="bold"
                         android:fontFamily="monospace" />
 
@@ -113,8 +114,8 @@
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
                         android:background="#334155"
-                        android:layout_marginTop="14dp"
-                        android:layout_marginBottom="14dp" />
+                        android:layout_marginTop="10dp"
+                        android:layout_marginBottom="10dp" />
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -126,7 +127,7 @@
                             android:layout_weight="1"
                             android:text="Engine AceStream:"
                             android:textColor="#94A3B8"
-                            android:textSize="14sp" />
+                            android:textSize="13sp" />
                         <TextView
                             android:id="@+id/tvEngineStatus"
                             android:layout_width="wrap_content"
@@ -134,13 +135,13 @@
                             android:text="Sẵn sàng (Port 6878/62062)"
                             android:textColor="#F1F5F9"
                             android:textStyle="bold"
-                            android:textSize="14sp" />
+                            android:textSize="13sp" />
                     </LinearLayout>
 
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
+                        android:layout_marginTop="6dp"
                         android:orientation="horizontal">
                         <TextView
                             android:layout_width="0dp"
@@ -148,81 +149,100 @@
                             android:layout_weight="1"
                             android:text="Giới hạn RAM Cache:"
                             android:textColor="#94A3B8"
-                            android:textSize="14sp" />
+                            android:textSize="13sp" />
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="100 MB (Cực nhẹ cho Box 2GB)"
                             android:textColor="#38BDF8"
                             android:textStyle="bold"
-                            android:textSize="14sp" />
-                    </LinearLayout>
-
-                    <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:orientation="horizontal">
-                        <TextView
-                            android:layout_width="0dp"
-                            android:layout_height="wrap_content"
-                            android:layout_weight="1"
-                            android:text="Tự chạy khi khởi động:"
-                            android:textColor="#94A3B8"
-                            android:textSize="14sp" />
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:text="BẬT (Boot Receiver)"
-                            android:textColor="#4ADE80"
-                            android:textStyle="bold"
-                            android:textSize="14sp" />
+                            android:textSize="13sp" />
                     </LinearLayout>
                 </LinearLayout>
 
-                <!-- Card: Cú pháp URL -->
+                <!-- Card 2: 3 Operational Modes -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:background="#1E293B"
                     android:orientation="vertical"
-                    android:padding="20dp">
+                    android:padding="16dp">
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="HƯỚNG DẪN KẾT NỐI CHO THIẾT BỊ KHÁC"
+                        android:text="CHẾ ĐỘ VẬN HÀNH TRẠM PHÁT HEADLESS"
                         android:textColor="#94A3B8"
-                        android:textSize="12sp"
-                        android:textStyle="bold" />
+                        android:textSize="11sp"
+                        android:textStyle="bold"
+                        android:layout_marginBottom="10dp" />
 
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:text="Trên G2, Samsung Smart TV (Tizen), Apple TV (VPhim) hoặc PC, mở link:"
-                        android:textColor="#CBD5E1"
-                        android:textSize="13sp" />
-
-                    <TextView
-                        android:id="@+id/tvSampleUrl"
+                    <!-- Mode 0: Auto-Boot on Power-on / Reboot (Headless Box) -->
+                    <Button
+                        android:id="@+id/btnToggleAutoBoot"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:background="#0F172A"
-                        android:padding="12dp"
-                        android:text="http://192.168.1.xxx:8000/?infohash=&lt;MÃ_KÊNH&gt;"
-                        android:textColor="#38BDF8"
-                        android:textSize="14sp"
-                        android:fontFamily="monospace" />
+                        android:text="⚡ Tự khởi động khi bật nguồn: ĐANG BẬT"
+                        android:backgroundTint="#059669"
+                        android:textColor="#FFFFFF"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:focusable="true"
+                        android:nextFocusUp="@+id/btnToggleAutoBoot"
+                        android:nextFocusLeft="@+id/btnToggleAutoBoot"
+                        android:nextFocusRight="@+id/btnTestStream"
+                        android:nextFocusDown="@+id/btnToggle247"
+                        android:layout_marginBottom="6dp" />
 
-                    <TextView
-                        android:layout_width="wrap_content"
+                    <!-- Mode 1: 24/7 Always-On -->
+                    <Button
+                        android:id="@+id/btnToggle247"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:text="💡 FPT Box chỉ làm nhiệm vụ nhận và chia sẻ luồng (Proxy), hoàn toàn không giải mã video nên không bị nóng và không bao giờ lag."
-                        android:textColor="#94A3B8"
-                        android:textSize="12sp" />
+                        android:text="🟢 Chế độ 24/7: ĐANG BẬT (Không ngủ)"
+                        android:backgroundTint="#0F766E"
+                        android:textColor="#FFFFFF"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:focusable="true"
+                        android:nextFocusUp="@+id/btnToggleAutoBoot"
+                        android:nextFocusLeft="@+id/btnToggle247"
+                        android:nextFocusRight="@+id/btnTestStream"
+                        android:nextFocusDown="@+id/btnToggleWatchdog"
+                        android:layout_marginBottom="6dp" />
+
+                    <!-- Mode 2: Watchdog Auto-Restart -->
+                    <Button
+                        android:id="@+id/btnToggleWatchdog"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="🛡️ Tự Restart khi nghẽn: ĐANG BẬT"
+                        android:backgroundTint="#1D4ED8"
+                        android:textColor="#FFFFFF"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:focusable="true"
+                        android:nextFocusUp="@+id/btnToggle247"
+                        android:nextFocusLeft="@+id/btnToggleWatchdog"
+                        android:nextFocusRight="@+id/btnRestartHub"
+                        android:nextFocusDown="@+id/btnToggleHubPower"
+                        android:layout_marginBottom="6dp" />
+
+                    <!-- Mode 3: Stop / Start Hub Power -->
+                    <Button
+                        android:id="@+id/btnToggleHubPower"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="🛑 TẮT TRẠM (Giải phóng FPT Box)"
+                        android:backgroundTint="#991B1B"
+                        android:textColor="#FFFFFF"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:focusable="true"
+                        android:nextFocusUp="@+id/btnToggleWatchdog"
+                        android:nextFocusLeft="@+id/btnToggleHubPower"
+                        android:nextFocusRight="@+id/btnHideBackground"
+                        android:nextFocusDown="@+id/btnClearLog" />
                 </LinearLayout>
             </LinearLayout>
 
@@ -230,30 +250,31 @@
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_weight="0.9"
-                android:orientation="vertical">
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:layout_marginStart="12dp">
 
-                <!-- Card: Thống kê thời gian thực -->
+                <!-- Card 3: Realtime Activity -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:background="#1E293B"
                     android:orientation="vertical"
-                    android:padding="20dp"
-                    android:layout_marginBottom="16dp">
+                    android:padding="16dp"
+                    android:layout_marginBottom="12dp">
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="HOẠT ĐỘNG THỜI GIAN THỰC (REALTIME)"
                         android:textColor="#94A3B8"
-                        android:textSize="12sp"
+                        android:textSize="11sp"
                         android:textStyle="bold" />
 
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
+                        android:layout_marginTop="8dp"
                         android:orientation="horizontal">
                         <TextView
                             android:layout_width="0dp"
@@ -261,7 +282,7 @@
                             android:layout_weight="1"
                             android:text="Kênh đang phát:"
                             android:textColor="#94A3B8"
-                            android:textSize="14sp" />
+                            android:textSize="13sp" />
                         <TextView
                             android:id="@+id/tvActiveChannel"
                             android:layout_width="wrap_content"
@@ -269,13 +290,13 @@
                             android:text="Chờ kết nối..."
                             android:textColor="#F1F5F9"
                             android:fontFamily="monospace"
-                            android:textSize="13sp" />
+                            android:textSize="12sp" />
                     </LinearLayout>
 
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
+                        android:layout_marginTop="6dp"
                         android:orientation="horizontal">
                         <TextView
                             android:layout_width="0dp"
@@ -283,7 +304,7 @@
                             android:layout_weight="1"
                             android:text="Thiết bị đang xem:"
                             android:textColor="#94A3B8"
-                            android:textSize="14sp" />
+                            android:textSize="13sp" />
                         <TextView
                             android:id="@+id/tvClientCount"
                             android:layout_width="wrap_content"
@@ -291,13 +312,13 @@
                             android:text="0 thiết bị (Clients)"
                             android:textColor="#4ADE80"
                             android:textStyle="bold"
-                            android:textSize="14sp" />
+                            android:textSize="13sp" />
                     </LinearLayout>
 
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
+                        android:layout_marginTop="6dp"
                         android:orientation="horizontal">
                         <TextView
                             android:layout_width="0dp"
@@ -305,7 +326,7 @@
                             android:layout_weight="1"
                             android:text="Tốc độ truyền tải:"
                             android:textColor="#94A3B8"
-                            android:textSize="14sp" />
+                            android:textSize="13sp" />
                         <TextView
                             android:id="@+id/tvBitrate"
                             android:layout_width="wrap_content"
@@ -313,13 +334,13 @@
                             android:text="0 KB/s"
                             android:textColor="#38BDF8"
                             android:textStyle="bold"
-                            android:textSize="14sp" />
+                            android:textSize="13sp" />
                     </LinearLayout>
 
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
+                        android:layout_marginTop="6dp"
                         android:orientation="horizontal">
                         <TextView
                             android:layout_width="0dp"
@@ -327,54 +348,84 @@
                             android:layout_weight="1"
                             android:text="Mạng P2P Swarm:"
                             android:textColor="#94A3B8"
-                            android:textSize="14sp" />
+                            android:textSize="13sp" />
                         <TextView
                             android:id="@+id/tvPeers"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="0 Peers"
                             android:textColor="#F1F5F9"
-                            android:textSize="14sp" />
+                            android:textSize="13sp" />
                     </LinearLayout>
                 </LinearLayout>
 
-                <!-- Card: Nút điều khiển Remote -->
+                <!-- Card 4: Quick Actions -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:background="#1E293B"
                     android:orientation="vertical"
-                    android:padding="20dp">
+                    android:padding="16dp">
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="ĐIỀU KHIỂN BẰNG REMOTE TV"
+                        android:text="ĐIỀU KHIỂN REMOTE TV"
                         android:textColor="#94A3B8"
-                        android:textSize="12sp"
+                        android:textSize="11sp"
                         android:textStyle="bold"
-                        android:layout_marginBottom="12dp" />
+                        android:layout_marginBottom="8dp" />
+
+                    <!-- Input custom infohash or leave blank for default -->
+                    <EditText
+                        android:id="@+id/etTestInfohash"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="#0F172A"
+                        android:textColor="#38BDF8"
+                        android:textColorHint="#475569"
+                        android:hint="Nhập Infohash (hoặc để trống để test mặc định)"
+                        android:textSize="11sp"
+                        android:fontFamily="monospace"
+                        android:padding="8dp"
+                        android:singleLine="true"
+                        android:layout_marginBottom="6dp"
+                        android:focusable="true"
+                        android:nextFocusUp="@+id/etTestInfohash"
+                        android:nextFocusLeft="@+id/btnToggleAutoBoot"
+                        android:nextFocusRight="@+id/etTestInfohash"
+                        android:nextFocusDown="@+id/btnTestStream" />
 
                     <Button
                         android:id="@+id/btnTestStream"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="⚡ Thử luồng Eleven Sports 1"
+                        android:text="⚡ Thử luồng mặc định / Infohash"
                         android:backgroundTint="#0284C7"
                         android:textColor="#FFFFFF"
+                        android:textSize="12sp"
                         android:textStyle="bold"
                         android:focusable="true"
-                        android:layout_marginBottom="8dp" />
+                        android:nextFocusUp="@+id/etTestInfohash"
+                        android:nextFocusLeft="@+id/btnToggleAutoBoot"
+                        android:nextFocusRight="@+id/btnTestStream"
+                        android:nextFocusDown="@+id/btnRestartHub"
+                        android:layout_marginBottom="6dp" />
 
                     <Button
                         android:id="@+id/btnRestartHub"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="🔄 Khởi động lại Hub &amp; Engine"
+                        android:text="🔄 Khởi động lại ngay (Force Restart)"
                         android:backgroundTint="#334155"
                         android:textColor="#E2E8F0"
+                        android:textSize="12sp"
                         android:focusable="true"
-                        android:layout_marginBottom="8dp" />
+                        android:nextFocusUp="@+id/btnTestStream"
+                        android:nextFocusLeft="@+id/btnToggleWatchdog"
+                        android:nextFocusRight="@+id/btnRestartHub"
+                        android:nextFocusDown="@+id/btnHideBackground"
+                        android:layout_marginBottom="6dp" />
 
                     <Button
                         android:id="@+id/btnHideBackground"
@@ -383,9 +434,93 @@
                         android:text="🔽 Chạy ẩn (Về màn hình Home)"
                         android:backgroundTint="#166534"
                         android:textColor="#4ADE80"
-                        android:focusable="true" />
+                        android:textSize="12sp"
+                        android:focusable="true"
+                        android:nextFocusUp="@+id/btnRestartHub"
+                        android:nextFocusLeft="@+id/btnToggleHubPower"
+                        android:nextFocusRight="@+id/btnHideBackground"
+                        android:nextFocusDown="@+id/btnClearLog" />
                 </LinearLayout>
             </LinearLayout>
         </LinearLayout>
+
+        <!-- Bottom Full-Width Card: Live Diagnostics Log Terminal -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="#0F172A"
+            android:orientation="vertical"
+            android:padding="16dp"
+            android:elevation="4dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="10dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="NHẬT KÝ HOẠT ĐỘNG THỜI GIAN THỰC (LIVE DIAGNOSTIC LOG)"
+                    android:textColor="#38BDF8"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvBrowserLogHint"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Xem trên web: http://192.168.1.xxx:8000/log"
+                    android:textColor="#A5F3FC"
+                    android:textSize="11sp"
+                    android:fontFamily="monospace"
+                    android:layout_marginEnd="16dp" />
+
+                <Button
+                    android:id="@+id/btnClearLog"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Xóa Log"
+                    android:backgroundTint="#334155"
+                    android:textColor="#E2E8F0"
+                    android:textSize="11sp"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:minHeight="36dp"
+                    android:focusable="true"
+                    android:nextFocusUp="@+id/btnHideBackground"
+                    android:nextFocusLeft="@+id/btnToggleHubPower"
+                    android:nextFocusDown="@+id/btnClearLog"
+                    android:nextFocusRight="@+id/btnClearLog" />
+            </LinearLayout>
+
+            <ScrollView
+                android:id="@+id/logScrollView"
+                android:layout_width="match_parent"
+                android:layout_height="220dp"
+                android:background="#050811"
+                android:padding="10dp"
+                android:fillViewport="true"
+                android:focusable="false"
+                android:focusableInTouchMode="false"
+                android:descendantFocusability="blocksDescendants">
+
+                <TextView
+                    android:id="@+id/tvLiveLogConsole"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:textColor="#A7F3D0"
+                    android:textSize="11sp"
+                    android:lineSpacingExtra="3dp"
+                    android:focusable="false"
+                    android:focusableInTouchMode="false"
+                    android:text="[CHỜ] Hệ thống nhật ký đang lắng nghe..." />
+            </ScrollView>
+        </LinearLayout>
+
     </LinearLayout>
 </ScrollView>

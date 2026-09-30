@@ -61,6 +61,7 @@ class G2StreamProxyServer(
                 channel.socket().bind(java.net.InetSocketAddress(java.net.Inet4Address.getByAddress(byteArrayOf(0, 0, 0, 0)), port), 50)
                 serverSocket = channel.socket()
                 Log.i(TAG, "G2StreamProxyServer started and listening on 0.0.0.0:$port (AF_INET IPv4)")
+                AppLogger.s("PROXY", "Trạm phát Proxy cổng $port đã sẵn sàng lắng nghe trên 0.0.0.0:$port (IPv4)")
 
                 while (isActive && isRunning) {
                     val clientSock = serverSocket?.accept() ?: break
@@ -105,6 +106,7 @@ class G2StreamProxyServer(
     }
 
     suspend fun prewarmStream(channelId: String, sourceType: String, persistent: Boolean = false): Boolean {
+        AppLogger.i("PROXY", "⚡ Bắt đầu yêu cầu nạp luồng: ${channelId.take(12)}... ($sourceType)")
         return try {
             val stream = getOrCreateStream(channelId, sourceType, persistent)
             if (stream != null) {
@@ -113,13 +115,16 @@ class G2StreamProxyServer(
                     startDummyReader(stream)
                 }
                 Log.i(TAG, "Prewarmed channel $channelId successfully (persistent=$persistent)")
+                AppLogger.s("PROXY", "🟢 Luồng sẵn sàng tại: ${stream.playbackUrl}")
                 true
             } else {
                 Log.w(TAG, "Failed to prewarm channel $channelId")
+                AppLogger.e("PROXY", "🔴 Không thể khởi tạo luồng từ Engine cho kênh: ${channelId.take(12)}...")
                 false
             }
         } catch (e: Exception) {
             Log.e(TAG, "Prewarm exception: ${e.message}")
+            AppLogger.e("PROXY", "🔴 Lỗi ngoại lệ khi nạp luồng: ${e.message}", e)
             false
         }
     }
@@ -192,6 +197,14 @@ class G2StreamProxyServer(
                 return@withContext
             }
 
+            // 1b. Realtime Diagnostics Log Export
+            if (rawUri == "/log" || rawUri == "/log.txt" || rawUri.startsWith("/api/log")) {
+                val text = AppLogger.getFullLogText()
+                sendHttpResponse(out, "text/plain; charset=utf-8", text.toByteArray(Charsets.UTF_8))
+                clientSock.close()
+                return@withContext
+            }
+
             // 2. Health & Status JSON
             if (rawUri.startsWith("/status") || rawUri.startsWith("/proxy/health")) {
                 val current = latestActiveStream
@@ -215,8 +228,12 @@ class G2StreamProxyServer(
                 val persistent = queryParams["persistent"]?.toBoolean() ?: true
 
                 if (chId.isNotEmpty()) {
+                    configManager?.let { cfg ->
+                        cfg.defaultChannelId = chId
+                        cfg.defaultSourceType = sType
+                    }
                     val ok = prewarmStream(chId, sType, persistent)
-                    val resp = if (ok) """{"success":true,"message":"Channel $chId prewarmed successfully"}"""
+                    val resp = if (ok) """{"success":true,"message":"Channel $chId prewarmed successfully","saved":true}"""
                                else """{"success":false,"message":"Failed to prewarm channel"}"""
                     sendHttpResponse(out, "application/json", resp.toByteArray(Charsets.UTF_8))
                 } else {
@@ -298,9 +315,25 @@ class G2StreamProxyServer(
             }
 
             if (channelId.isEmpty()) {
-                sendHttpError(out, 400, "Missing id or infohash parameter")
-                clientSock.close()
-                return@withContext
+                val def = configManager?.defaultChannelId ?: ""
+                if (def.isNotEmpty()) {
+                    channelId = def
+                    sourceType = configManager?.defaultSourceType ?: "infohash"
+                    Log.i(TAG, "Request without explicit channel, serving preserved stream: $channelId")
+                } else {
+                    sendHttpError(out, 400, "Missing id or infohash parameter")
+                    clientSock.close()
+                    return@withContext
+                }
+            }
+
+            // AUTO-PERSIST: Keep the current/last stream as default channel so it is preserved across reboots!
+            configManager?.let { cfg ->
+                if (cfg.defaultChannelId != channelId) {
+                    cfg.defaultChannelId = channelId
+                    cfg.defaultSourceType = sourceType
+                    AppLogger.i("CONFIG", "💾 Đã tự động ghi nhớ luồng cũ vào bộ nhớ: $channelId ($sourceType)")
+                }
             }
 
             val isDefault = (channelId == configManager?.defaultChannelId)
