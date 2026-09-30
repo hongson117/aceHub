@@ -10,6 +10,10 @@
 [![Pass-Through: 0 Transcode](https://img.shields.io/badge/Pass--Through-0%20Transcode-success.svg)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
 
+<p align="center">
+  <img src="docs/images/acehub_showcase.jpg" alt="AceHub Smart Home Streaming Ecosystem" width="100%" style="border-radius: 12px;" />
+</p>
+
 ---
 
 ## 1. Tổng Quan Dự Án (Overview)
@@ -150,3 +154,10 @@ Dự án này được xây dựng với mục tiêu tuân thủ 100% tiêu chu�
 ## 8. Giấy Phép (License)
 
 Dự án được phân phối dưới giấy phép **[MIT License](LICENSE)**. Xem tệp `LICENSE` để biết thêm chi tiết.
+
+---
+
+## 9. Tuyên Bố Miễn Trừ Trách Nhiệm (Disclaimer)
+
+> **Important Legal Disclaimer:**  
+> AceHub is an open-source, neutral network stream proxy and gateway utility designed for local area networks (LAN). **AceHub does not provide, host, store, scrape, or distribute any video streams, media files, or copyrighted television channels.** The application acts solely as an HTTP socket pipe between local clients and protocol engines. Users are solely responsible for the legality and origin of any stream identifiers (infohashes) they choose to process with this software.
