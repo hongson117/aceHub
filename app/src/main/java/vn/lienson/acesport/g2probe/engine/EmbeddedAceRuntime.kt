@@ -74,15 +74,34 @@ class EmbeddedAceRuntime(private val context: Context) {
                 throw IOException("Gói giải nén bị thiếu các tệp thành phần bắt buộc (acestreamengine, Core.so, CoreApp.so, cacert.pem)")
             }
 
-            // Atomic switch from staging to root
-            deleteRecursively(root)
-            if (!staging.renameTo(root)) {
-                staging.copyRecursively(root, overwrite = true)
-                deleteRecursively(staging)
+            // Rollback-safe directory swap:
+            val backup = File(appContext.filesDir, "aceserve/${abi}_backup")
+            deleteRecursively(backup)
+
+            if (root.exists()) {
+                if (!root.renameTo(backup)) {
+                    root.copyRecursively(backup, overwrite = true)
+                    deleteRecursively(root)
+                }
             }
 
+            // Move verified staging to root
+            val swapOk = staging.renameTo(root) || (staging.copyRecursively(root, overwrite = true).also { deleteRecursively(staging) })
+            if (!swapOk || !isRuntimeIntact(root)) {
+                // Rollback from backup if staging activation failed
+                if (backup.exists()) {
+                    deleteRecursively(root)
+                    backup.renameTo(root)
+                }
+                throw IOException("Failed to activate new runtime from staging. Rolled back to previous state.")
+            }
+
+            // Cleanup backup and staging on success
+            deleteRecursively(backup)
+            deleteRecursively(staging)
+
             marker.createNewFile()
-            AppLogger.s("ENGINE", "Runtime Engine Linux sạch đã sẵn sàng tại: ${root.absolutePath}")
+            AppLogger.s("ENGINE", "Runtime Engine Linux đã được kích hoạt an toàn tại: ${root.absolutePath}")
         } catch (e: Exception) {
             deleteRecursively(staging)
             AppLogger.e("ENGINE", "Lỗi nạp Engine Linux: ${e.message}", e)

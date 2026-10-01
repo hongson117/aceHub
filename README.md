@@ -83,7 +83,7 @@ http://192.168.1.173:8000/live
 ```
 Hoặc chỉ định infohash cụ thể:
 ```text
-http://192.168.1.173:8000/ace/getstream?infohash=73d24aeff6515abb236ea8a3e77d89fe0b04b665
+http://192.168.1.173:8000/ace/getstream?infohash=<YOUR_INFOHASH>
 ```
 
 ### 2. Dành Cho Apple TV (tvOS VFilm / AVPlayer)
@@ -208,9 +208,12 @@ Dự án này được xây dựng với mục tiêu tuân thủ 100% tiêu chu�
 * **`libacepython.so`:** Trình chạy JNI nhúng mã nguồn mở cho Python trên Android, tuân theo giấy phép Python Software Foundation License / Apache 2.0.
 * **Android Compatibility Shims (`main_android.py`):** Cung cấp các cấu trúc tương thích chuẩn với cơ chế bảo mật SELinux của Android (như `/proc/cpuinfo` và `/proc/meminfo` giả lập cho sandbox không có quyền root) để Python tiêu chuẩn có thể khởi động bình thường. Hoàn toàn không can thiệp DRM, không can thiệp cơ chế kiểm tra bản quyền và không thay đổi logic cấp phép của Engine.
 
-### 7.2 Thăm Dò Tín Hiệu Trực Tiếp & Luồng Chẩn Đoán Chuẩn Mở (Live Downlink Probe)
-* **Thăm dò luồng thực tế (Real Bytes Read):** Nút kiểm tra tín hiệu trên TV Remote không chỉ bắt tay API lý thuyết mà mở trực tiếp kết nối HTTP tới Engine, đọc dòng byte video (`bytesRead >= 64KB`) và đo lường tốc độ tức thời (`speedKbps`) nhằm xác nhận luồng đang tải về thành công trước khi lưu cấu hình.
-* **Luồng chẩn đoán chuẩn mở (Open Diagnostic Stream CC-BY 3.0):** Để tối ưu trải nghiệm người dùng trên Android TV D-Pad remote mà không yêu cầu gõ thủ công 40 ký tự hex, khi ô nhập để trống trên thiết bị mới cài đặt, hệ thống tự động sử dụng luồng chẩn đoán mở chuẩn quốc tế (*Big Buck Bunny 1080p*, Blender Foundation, Creative Commons CC-BY 3.0) để đo lường băng thông mạng, tuyệt đối không nhúng hay liên kết với bất kỳ đài truyền hình thương mại nào.
+### 7.2 Thăm Dò Tín Hiệu Thực Tế & Nội Dung Mẫu Giấy Phép Mở (Live Downlink Probe & Open-Licensed Sample)
+* **Thăm dò 3 mức thực tế (Multi-Tier Verification):** Nút kiểm tra tín hiệu trên TV Remote phân cấp kiểm tra 3 mức nghiêm ngặt:
+  1. *Mức 1 (Bắt tay phiên):* Xác nhận Engine sẵn sàng và sinh URL phát.
+  2. *Mức 2 (Đọc dòng byte thực tế):* Mở trực tiếp kết nối HTTP tới Engine, yêu cầu thu nạp tối thiểu `>= 64 KiB` (65,536 bytes) dữ liệu thực tế.
+  3. *Mức 3 (Kiểm tra định dạng media):* Xác thực byte đồng bộ MPEG-TS (`0x47`) hoặc container media hợp lệ trước khi báo thành công và lưu cấu hình. Quá trình kiểm tra đồng thời đo lường tốc độ tức thời (`bytesPerSec`, `KiB/s`) và đối chiếu lượng dữ liệu tải mới từ mạng (`deltaDownloadedBytes`). Sau khi hoàn tất kiểm tra, phiên tạm thời được giải phóng ngay lập tức để tránh rò rỉ tài nguyên.
+* **Nội dung mẫu có giấy phép mở (Open-Licensed Test Media - CC BY 3.0):** AceHub **không cung cấp danh sách kênh truyền hình**. Nhằm tối ưu trải nghiệm trên Android TV D-Pad remote (tránh phải gõ thủ công 40 ký tự hex khi mới cài đặt), ứng dụng cung cấp tùy chọn kiểm tra bằng nội dung mẫu có giấy phép mở: phim hoạt hình ngắn *Big Buck Bunny* (Dự án Peach, (c) Blender Foundation | [peach.blender.org](https://peach.blender.org/), cấp phép theo giấy phép [Creative Commons Attribution 3.0 Unported - CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)).
 
 ---
 
@@ -223,7 +226,7 @@ Dự án được phân phối dưới giấy phép **[MIT License](LICENSE)**. 
 > **Important Legal Disclaimer / Tuyên Bố Pháp Lý:**  
 > 
 > **English:**  
-> AceHub is an open-source, neutral network stream proxy and gateway utility designed for local area networks (LAN). **AceHub does not provide, curate, scrape, host, or operate any catalogue of broadcasts or copyrighted channels.** The software functions solely as a standard local HTTP socket relay that transfers stream data actively configured and supplied by the user. Users are solely responsible for obtaining and verifying the legality, distribution rights, and origin of any stream identifiers (infohashes / content IDs) they choose to process with this software. Third-party protocol engines are governed by their respective licenses and terms of service; AceHub does not emulate unauthorized access levels or circumvent any technological protection measures (TPM).
+> AceHub is an open-source, neutral network stream proxy and gateway utility designed for local area networks (LAN). **AceHub does not provide, curate, scrape, host, or operate any catalogue of broadcasts or copyrighted television channels.** The application includes an optional network throughput diagnostic probe using open-licensed sample media (CC BY 3.0). Live cache is configured to use system RAM (100 MiB target). Users are solely responsible for obtaining and verifying the legality, distribution rights, and origin of any stream identifiers (infohashes / content IDs) they choose to process with this software. Third-party protocol engines are governed by their respective licenses and terms of service; AceHub does not emulate unauthorized access levels or circumvent any technological protection measures (TPM).
 > 
 > **Tiếng Việt:**  
-> AceHub là công cụ quản lý và chuyển tiếp luồng mạng nội bộ (LAN Stream Proxy & Gateway) mã nguồn mở. **AceHub không cung cấp sẵn, tuyển chọn, thu thập (scrape) hoặc vận hành bất kỳ danh mục nguồn phát hay kênh truyền hình có bản quyền nào.** Phần mềm hoạt động như một cầu nối socket HTTP nội bộ chuyển tiếp dữ liệu luồng do người dùng chủ động cấu hình. Người dùng chịu hoàn toàn trách nhiệm về tính hợp pháp và quyền sử dụng đối với các định danh luồng (infohash / content ID) được nạp vào phần mềm. Việc kết nối tới engine giao thức tuân thủ các giấy phép dịch vụ tương ứng; AceHub không can thiệp, không giả lập quyền truy cập trái phép và không vô hiệu hóa bất kỳ biện pháp công nghệ bảo vệ quyền nào.
+> AceHub là công cụ quản lý và chuyển tiếp luồng mạng nội bộ (LAN Stream Proxy & Gateway) mã nguồn mở. **AceHub không cung cấp sẵn, tuyển chọn, thu thập (scrape) hoặc vận hành bất kỳ danh mục nguồn phát hay kênh truyền hình có bản quyền nào.** Ứng dụng cung cấp tùy chọn thăm dò băng thông mạng bằng nội dung mẫu có giấy phép mở (CC BY 3.0). Bộ nhớ đệm luồng trực tiếp (Live cache) được chỉ định sử dụng RAM hệ thống (mục tiêu 100 MiB). Người dùng chịu hoàn toàn trách nhiệm về tính hợp pháp và quyền sử dụng đối với các định danh luồng (infohash / content ID) được nạp vào phần mềm. Việc kết nối tới engine giao thức tuân thủ các giấy phép dịch vụ tương ứng; AceHub không can thiệp, không giả lập quyền truy cập trái phép và không vô hiệu hóa bất kỳ biện pháp công nghệ bảo vệ quyền nào.

@@ -129,11 +129,20 @@ class G2StreamProxyServer(
         }
     }
 
+    enum class ProbeStage {
+        ENGINE_UNRESPONSIVE,       // Không thể bắt tay hoặc Engine từ chối tạo phiên (Mức 1)
+        CONNECTED_INSUFFICIENT,    // Kết nối được HTTP playback nhưng nhận dưới ngưỡng tối thiểu < 64KB (Mức 2)
+        SUCCESS_VERIFIED           // Nhận đủ >= 64KB (65,536 bytes) dữ liệu video hợp lệ từ Engine/Swarm (Mức 3)
+    }
+
     data class ProbeResult(
         val success: Boolean,
+        val stage: ProbeStage,
         val bytesRead: Long,
-        val speedKbps: Long,
+        val bytesPerSec: Long,
         val peers: Int,
+        val deltaDownloadedBytes: Long,
+        val isMediaValid: Boolean,
         val playbackUrl: String?,
         val message: String
     )
@@ -143,20 +152,35 @@ class G2StreamProxyServer(
         sourceType: String,
         timeoutMs: Long = 10000L
     ): ProbeResult = withContext(Dispatchers.IO) {
-        AppLogger.i("PROBE", "🔍 Đang kiểm tra tín hiệu tải về cho: ${channelId.take(12)}... ($sourceType)")
+        AppLogger.i("PROBE", "🔍 Khởi tạo thăm dò tín hiệu thực tế cho: ${channelId.take(12)}... ($sourceType)")
+
+        val initialStream = streamMap[channelId]
+        val initialDownloaded = initialStream?.downloaded ?: 0L
 
         val stream = getOrCreateStream(channelId, sourceType, persistent = false)
         if (stream == null || stream.playbackUrl.isEmpty()) {
-            AppLogger.e("PROBE", "🔴 Engine không phản hồi hoặc từ chối tạo luồng.")
-            return@withContext ProbeResult(false, 0, 0, 0, null, "Engine không phản hồi hoặc từ chối tạo luồng")
+            AppLogger.e("PROBE", "🔴 Mức 1 thất bại: Engine không phản hồi hoặc từ chối tạo luồng.")
+            return@withContext ProbeResult(
+                success = false,
+                stage = ProbeStage.ENGINE_UNRESPONSIVE,
+                bytesRead = 0L,
+                bytesPerSec = 0L,
+                peers = 0,
+                deltaDownloadedBytes = 0L,
+                isMediaValid = false,
+                playbackUrl = null,
+                message = "Engine không phản hồi hoặc từ chối tạo luồng (Mức 1 thất bại)"
+            )
         }
 
         var totalBytes = 0L
         var conn: HttpURLConnection? = null
+        var isMediaValid = false
         val startTime = System.currentTimeMillis()
+        val minRequiredBytes = 65536L // 64 KiB minimum threshold for valid stream verification
 
         try {
-            AppLogger.i("PROBE", "📡 Mở kết nối đọc dữ liệu stream từ Engine: ${stream.playbackUrl}")
+            AppLogger.i("PROBE", "📡 Mở kết nối đọc dòng byte media từ Engine: ${stream.playbackUrl}")
             val url = URL(stream.playbackUrl)
             conn = url.openConnection() as HttpURLConnection
             conn.connectTimeout = 6000
@@ -164,10 +188,16 @@ class G2StreamProxyServer(
             val inStream = conn.inputStream
             val buffer = ByteArray(16384)
 
-            // Đọc thử dòng byte dữ liệu trong khoảng thời gian timeoutMs hoặc đến khi nhận đủ >= 64KB
-            while (isActive && (System.currentTimeMillis() - startTime) < timeoutMs && totalBytes < 65536L) {
+            while (isActive && (System.currentTimeMillis() - startTime) < timeoutMs && totalBytes < minRequiredBytes) {
                 val n = inStream.read(buffer)
                 if (n > 0) {
+                    if (totalBytes == 0L && n >= 4) {
+                        // Check MPEG-TS sync byte 0x47 or standard media container header
+                        isMediaValid = (buffer[0] == 0x47.toByte()) || 
+                                       (buffer[0] == 0x1A.toByte() && buffer[1] == 0x45.toByte()) || 
+                                       (buffer[0] == '#'.code.toByte()) || 
+                                       (buffer[4] == 'f'.code.toByte() && buffer[5] == 't'.code.toByte())
+                    }
                     totalBytes += n
                 } else if (n == -1) {
                     break
@@ -179,18 +209,66 @@ class G2StreamProxyServer(
             conn?.disconnect()
         }
 
-        val elapsedSec = maxOf(1L, (System.currentTimeMillis() - startTime) / 1000L)
-        val speedKbps = if (totalBytes > 0) (totalBytes * 8 / 1024) / elapsedSec else stream.speedKbps
+        val elapsedMs = maxOf(1L, System.currentTimeMillis() - startTime)
+        val bytesPerSec = (totalBytes * 1000L) / elapsedMs
         val peers = stream.peers
+        val finalDownloaded = stream.downloaded
+        val deltaDownloaded = if (finalDownloaded >= initialDownloaded) finalDownloaded - initialDownloaded else 0L
 
-        if (totalBytes > 0) {
-            val msg = "Đã nhận ${(totalBytes / 1024)} KB dữ liệu ($peers peers, ~$speedKbps Kbps)"
-            AppLogger.s("PROBE", "🟢 Thu được tín hiệu tải về thành công! $msg")
-            ProbeResult(true, totalBytes, speedKbps, peers, stream.playbackUrl, msg)
+        // Cleanup probe session to prevent lingering resource leaks if no clients are active
+        if (stream.clientCount == 0 && !stream.isPersistent) {
+            stream.statsJob?.cancel()
+            stream.dummyReaderJob?.cancel()
+            stream.client?.close()
+            if (!stream.commandUrl.isNullOrEmpty()) {
+                val cUrl = stream.commandUrl
+                scope.launch(Dispatchers.IO) {
+                    try {
+                        val stopConn = URL("${cUrl}/stop").openConnection() as HttpURLConnection
+                        stopConn.connectTimeout = 1500
+                        stopConn.readTimeout = 1500
+                        stopConn.inputStream.read()
+                    } catch (_: Exception) {}
+                }
+            }
+            streamMap.remove(channelId)
+            if (latestActiveStream?.channelId == channelId) {
+                latestActiveStream = null
+            }
+        }
+
+        if (totalBytes >= minRequiredBytes) {
+            val msg = "Đã nhận ${(totalBytes / 1024)} KiB media hợp lệ (Swarm: $peers peers | Tải mới: ${(deltaDownloaded / 1024)} KiB)"
+            AppLogger.s("PROBE", "🟢 Mức 3 đạt: $msg")
+            ProbeResult(
+                success = true,
+                stage = ProbeStage.SUCCESS_VERIFIED,
+                bytesRead = totalBytes,
+                bytesPerSec = bytesPerSec,
+                peers = peers,
+                deltaDownloadedBytes = deltaDownloaded,
+                isMediaValid = isMediaValid,
+                playbackUrl = stream.playbackUrl,
+                message = msg
+            )
         } else {
-            val msg = "Chưa có byte dữ liệu tải về sau ${timeoutMs / 1000}s (Peers: $peers)"
-            AppLogger.w("PROBE", "⚠️ $msg")
-            ProbeResult(false, 0, 0, peers, stream.playbackUrl, msg)
+            val msg = if (totalBytes > 0) {
+                "Nhận được $totalBytes byte (< 64 KiB), chưa đủ ngưỡng nghiệm thu luồng trong ${timeoutMs / 1000}s"
+            } else {
+                "Không nhận được dữ liệu (0 byte) sau ${timeoutMs / 1000}s (Peers: $peers)"
+            }
+            AppLogger.w("PROBE", "⚠️ Mức 2 cảnh báo: $msg")
+            ProbeResult(
+                success = false,
+                stage = ProbeStage.CONNECTED_INSUFFICIENT,
+                bytesRead = totalBytes,
+                bytesPerSec = bytesPerSec,
+                peers = peers,
+                deltaDownloadedBytes = deltaDownloaded,
+                isMediaValid = isMediaValid,
+                playbackUrl = stream.playbackUrl,
+                message = msg
+            )
         }
     }
 
@@ -259,8 +337,14 @@ class G2StreamProxyServer(
 
             val rawUri = parts[1]
 
-            // Enforce LAN-only restriction on management and configuration APIs
-            val isManagementUri = rawUri.startsWith("/config") || rawUri.startsWith("/prewarm") || rawUri.startsWith("/stop") || rawUri.startsWith("/restart")
+            // Enforce LAN-only restriction on management, probe and configuration APIs
+            val isManagementUri = rawUri.startsWith("/config") ||
+                    rawUri.startsWith("/prewarm") ||
+                    rawUri.startsWith("/probe") ||
+                    rawUri.startsWith("/stop") ||
+                    rawUri.startsWith("/restart") ||
+                    rawUri.startsWith("/log") ||
+                    rawUri.startsWith("/api/log")
             if (isManagementUri && !isLocalOrLanClient(clientSock)) {
                 Log.w(TAG, "Blocked unauthorized WAN request to management API: $rawUri from ${clientSock.inetAddress}")
                 sendHttpError(out, 403, "Forbidden: Management API is restricted to local LAN network")
@@ -299,15 +383,19 @@ class G2StreamProxyServer(
                 return@withContext
             }
 
-            // 2b. Live Downlink Signal Probe API
+            // 2b. Live Downlink Signal Probe API (3-Stage Verification)
             if (rawUri.startsWith("/probe")) {
                 val queryParams = parseQueryParams(rawUri)
-                val chId = queryParams["id"] ?: queryParams["infohash"] ?: queryParams["content_id"] ?: configManager?.defaultChannelId ?: G2ConfigManager.OPEN_DIAGNOSTIC_INFOHASH
+                val chId = queryParams["id"]?.takeIf { it.isNotEmpty() }
+                    ?: queryParams["infohash"]?.takeIf { it.isNotEmpty() }
+                    ?: queryParams["content_id"]?.takeIf { it.isNotEmpty() }
+                    ?: configManager?.defaultChannelId?.takeIf { it.isNotEmpty() }
+                    ?: G2ConfigManager.OPEN_DIAGNOSTIC_INFOHASH
                 val sType = queryParams["type"] ?: if (queryParams.containsKey("infohash") || chId.length == 40) "infohash" else "content_id"
                 val timeout = queryParams["timeout"]?.toLongOrNull() ?: 8000L
 
                 val result = probeStreamSignal(chId, sType, timeout)
-                val resp = """{"success":${result.success},"channel":"$chId","bytes_read":${result.bytesRead},"speed_kbps":${result.speedKbps},"peers":${result.peers},"message":"${result.message}"}"""
+                val resp = """{"success":${result.success},"stage":"${result.stage.name}","channel":"$chId","bytes_read":${result.bytesRead},"bytes_per_sec":${result.bytesPerSec},"speed_kibps":${result.bytesPerSec / 1024},"peers":${result.peers},"delta_downloaded_bytes":${result.deltaDownloadedBytes},"is_media_valid":${result.isMediaValid},"message":"${result.message}"}"""
                 sendHttpResponse(out, "application/json", resp.toByteArray(Charsets.UTF_8))
                 clientSock.close()
                 return@withContext
@@ -316,7 +404,11 @@ class G2StreamProxyServer(
             // 3. Prewarm Trigger API
             if (rawUri.startsWith("/prewarm")) {
                 val queryParams = parseQueryParams(rawUri)
-                val chId = queryParams["id"] ?: queryParams["infohash"] ?: queryParams["content_id"] ?: configManager?.defaultChannelId ?: ""
+                val chId = queryParams["id"]?.takeIf { it.isNotEmpty() }
+                    ?: queryParams["infohash"]?.takeIf { it.isNotEmpty() }
+                    ?: queryParams["content_id"]?.takeIf { it.isNotEmpty() }
+                    ?: configManager?.defaultChannelId?.takeIf { it.isNotEmpty() }
+                    ?: ""
                 val sType = queryParams["type"] ?: if (queryParams.containsKey("infohash") || chId.length == 40) "infohash" else "content_id"
                 val persistent = queryParams["persistent"]?.toBoolean() ?: true
 
@@ -420,21 +512,23 @@ class G2StreamProxyServer(
                 }
             }
 
-            // AUTO-PERSIST: Keep the current/last stream as default channel so it is preserved across reboots!
-            configManager?.let { cfg ->
-                if (cfg.defaultChannelId != channelId) {
-                    cfg.defaultChannelId = channelId
-                    cfg.defaultSourceType = sourceType
-                    AppLogger.i("CONFIG", "💾 Đã tự động ghi nhớ luồng cũ vào bộ nhớ: $channelId ($sourceType)")
-                }
-            }
-
             val isDefault = (channelId == configManager?.defaultChannelId)
             val stream = getOrCreateStream(channelId, sourceType, persistent = isDefault && (configManager?.isAlwaysHotStream == true))
             if (stream == null) {
                 sendHttpError(out, 502, "Failed to start stream with AceStream Engine")
                 clientSock.close()
                 return@withContext
+            }
+
+            // AUTO-PERSIST: Only persist active stream AFTER engine confirms creation, and exclude diagnostic benchmark
+            if (channelId != G2ConfigManager.OPEN_DIAGNOSTIC_INFOHASH) {
+                configManager?.let { cfg ->
+                    if (cfg.defaultChannelId != channelId) {
+                        cfg.defaultChannelId = channelId
+                        cfg.defaultSourceType = sourceType
+                        AppLogger.i("CONFIG", "💾 Đã tự động ghi nhớ luồng cũ vào bộ nhớ: $channelId ($sourceType)")
+                    }
+                }
             }
 
             synchronized(stream) {

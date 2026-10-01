@@ -1,8 +1,27 @@
 # ==============================================================================
 # AceHub Android Bootstrap & Compatibility Shim
 #
-# Purpose: Provide standard Android SELinux / Bionic libc sandbox compatibility
-# (e.g. synthetic /proc/cpuinfo and /proc/meminfo when restricted by Android UID policy).
+# Technical Rationale & Audit Matrix:
+# +------------------------+-------------------------------------------------------+
+# | Target Replaced        | Technical Rationale & Error Resolved                  |
+# +------------------------+-------------------------------------------------------+
+# | builtins.open          | Emulate synthetic /proc/{cpuinfo,meminfo,stat,uptime} |
+# |                        | required by Python Bionic libc when SELinux untrusted |
+# |                        | app UID policy forbids reading Linux kernel /proc.    |
+# +------------------------+-------------------------------------------------------+
+# | os.sysconf             | Fallback for SC_PHYS_PAGES / SC_AVPHYS_PAGES on Bionic|
+# |                        | Android runtime where sysconf names are unmapped.     |
+# +------------------------+-------------------------------------------------------+
+# | typing (GenericAlias)  | Catch SystemError during type annotation reflection   |
+# |                        | in Python 3.8/3.10 Bionic ARMv7 dynamic modules.      |
+# +------------------------+-------------------------------------------------------+
+# | SqliteCacheDBHandler   | Catch ValueError('list.remove(x): x not in list') on  |
+# | .BasicDBHandler.close  | SQLite connection teardown during Android thread exit.|
+# +------------------------+-------------------------------------------------------+
+# | UpdateSystemEpgTask    | Disable background Russian cloud EPG scraping tasks   |
+# |                        | to prevent WAN bandwidth waste & OOM on 2GB RAM boxes.|
+# +------------------------+-------------------------------------------------------+
+#
 # This script does NOT alter DRM, tamper with authorization, or hook licensing.
 # All stream playback and caching parameters are purely passed via standard CLI.
 # ==============================================================================

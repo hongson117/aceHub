@@ -192,31 +192,40 @@ class MainActivity : AppCompatActivity() {
                 else -> G2ConfigManager.OPEN_DIAGNOSTIC_INFOHASH
             }
 
+            val targetType = when {
+                isCustomInput -> if (inputHash.length == 40) "infohash" else "content_id"
+                config.defaultChannelId.isNotEmpty() -> config.defaultSourceType
+                else -> "infohash"
+            }
+
             val isDiagnostic = (targetHash == G2ConfigManager.OPEN_DIAGNOSTIC_INFOHASH)
-            val testLabel = if (isDiagnostic) "Luồng chẩn đoán mở (CC-BY 3.0)" else "Kênh ${targetHash.take(12)}..."
+            val testLabel = if (isDiagnostic) "Nội dung mẫu mở (CC BY 3.0)" else "Kênh ${targetHash.take(12)}..."
 
             Toast.makeText(this, "Đang kiểm tra & tải thử dữ liệu $testLabel...", Toast.LENGTH_SHORT).show()
             binding.tvActiveChannel.text = "Đang thăm dò tải dữ liệu: $testLabel..."
-            AppLogger.i("TEST", "👉 Bắt đầu kiểm tra luồng và thăm dò dữ liệu tải về: $targetHash")
+            AppLogger.i("TEST", "👉 Bắt đầu kiểm tra luồng và thăm dò dữ liệu tải về: $targetHash ($targetType)")
 
             scope.launch(Dispatchers.IO) {
-                val result = service.proxyServer?.probeStreamSignal(targetHash, "infohash", timeoutMs = 8000L)
+                val result = service.proxyServer?.probeStreamSignal(targetHash, targetType, timeoutMs = 8000L)
                 launch(Dispatchers.Main) {
                     if (result != null && result.success) {
                         if (isCustomInput) {
                             config.defaultChannelId = targetHash
+                            config.defaultSourceType = targetType
                             config.isAlwaysHotStream = true
                         }
-                        binding.tvActiveChannel.text = "${targetHash.take(12)}... (~${result.speedKbps} Kbps)"
-                        binding.tvBitrate.text = "${result.speedKbps} KB/s (~${String.format(java.util.Locale.US, "%.1f", result.speedKbps * 8 / 1024.0)} Mbps)"
+                        val kibPerSec = result.bytesPerSec / 1024
+                        val mbps = (result.bytesPerSec * 8.0) / 1_000_000.0
+                        binding.tvActiveChannel.text = "${targetHash.take(12)}... ($kibPerSec KiB/s)"
+                        binding.tvBitrate.text = "$kibPerSec KiB/s (${String.format(java.util.Locale.US, "%.2f", mbps)} Mbps)"
                         binding.tvPeers.text = "${result.peers} Peers"
-                        Toast.makeText(this@MainActivity, "🟢 Đã nhận ${result.bytesRead / 1024} KB dữ liệu! Tốc độ: ~${result.speedKbps} Kbps", Toast.LENGTH_LONG).show()
-                        AppLogger.s("TEST", "🟢 Tín hiệu tải về thành công! ${result.message}")
+                        Toast.makeText(this@MainActivity, "🟢 Đã nhận ${result.bytesRead / 1024} KiB media! Tốc độ: $kibPerSec KiB/s", Toast.LENGTH_LONG).show()
+                        AppLogger.s("TEST", "🟢 Tín hiệu tải về đạt chuẩn: ${result.message}")
                     } else {
                         val errMsg = result?.message ?: "Engine không phản hồi"
-                        binding.tvActiveChannel.text = "Tín hiệu thất bại / 0 byte"
+                        binding.tvActiveChannel.text = "Thất bại: ${result?.stage?.name ?: "LỖI"}"
                         Toast.makeText(this@MainActivity, "🔴 $errMsg", Toast.LENGTH_LONG).show()
-                        AppLogger.e("TEST", "🔴 Không có dữ liệu tải về: $errMsg")
+                        AppLogger.e("TEST", "🔴 Thăm dò không đạt: $errMsg")
                     }
                 }
             }
