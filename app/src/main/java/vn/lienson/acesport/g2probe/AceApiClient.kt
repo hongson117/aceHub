@@ -76,7 +76,7 @@ class AceApiClient(
             } else if (line.startsWith("AUTH")) {
                 authenticated = true
                 Log.i(TAG, "AceStream Telnet API Authenticated successfully: $line")
-                AppLogger.s("TELNET", "Xác thực Engine thành công! (Auth 0, 0 Ads)")
+                AppLogger.s("TELNET", "Xác thực Engine thành công qua API chuẩn")
                 w.print("STOP\r\n")
                 w.print("STOPDL\r\n")
                 w.print("SETOPTIONS use_stop_notifications=1\r\n")

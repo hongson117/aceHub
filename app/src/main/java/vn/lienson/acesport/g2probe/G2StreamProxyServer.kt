@@ -478,7 +478,7 @@ class G2StreamProxyServer(
             delay(500) // Allow engine to complete teardown
         }
 
-        // 1. Primary Solver: AceStream Partner Telnet API (AUTH 0, 100% 0 Ads, 0 Premium, 4K UHD Support)
+        // 1. Primary Solver: AceStream Telnet API (Standard Protocol Handshake, 0-Transcode, 4K UHD Support)
         val apiClient = AceApiClient(host = "127.0.0.1", apiPort = apiPort) { peers, speed, downloaded ->
             streamMap[channelId]?.let {
                 it.peers = peers

@@ -126,14 +126,14 @@ class AceEngineManager(private val context: Context, private val listener: Engin
                 // 1. Check if headless engine is already listening on loopback
                 if (isSocketAlive("127.0.0.1", 62062) || isSocketAlive("127.0.0.1", 6878)) {
                     boundPackage = "org.acestream.engine"
-                    boundVersion = "AceStream Headless Engine 3.2.17 (0 Ads)"
+                    boundVersion = "AceStream Headless Engine 3.2.17"
                     httpApiPort = 6878
                     engineApiPort = 62062
                     Log.i(TAG, "Discovered active headless AceStream on 127.0.0.1:62062!")
                     isEngineReady = true
                     isStarting = false
                     mainHandler.post {
-                        listener.onEngineStateChanged("READY", "Connected to AceStream Headless Engine (0 Ads)")
+                        listener.onEngineStateChanged("READY", "Connected to AceStream Headless Engine")
                         listener.onEngineReady(httpApiPort, engineApiPort, boundPackage, boundVersion)
                     }
                     return@Thread
@@ -152,7 +152,7 @@ class AceEngineManager(private val context: Context, private val listener: Engin
                         Thread.sleep(500)
                         if (isSocketAlive("127.0.0.1", 62062) || isSocketAlive("127.0.0.1", 6878)) {
                             boundPackage = context.packageName
-                            boundVersion = "AceStream Embedded Engine 3.2.17 (0 Ads)"
+                            boundVersion = "AceStream Embedded Engine 3.2.17"
                             httpApiPort = 6878
                             engineApiPort = 62062
                             Log.i(TAG, "Embedded AceStream engine running on 127.0.0.1:62062!")
@@ -160,7 +160,7 @@ class AceEngineManager(private val context: Context, private val listener: Engin
                             isEngineReady = true
                             isStarting = false
                             mainHandler.post {
-                                listener.onEngineStateChanged("READY", "Embedded AceStream Engine ready (0 Ads)")
+                                listener.onEngineStateChanged("READY", "Embedded AceStream Engine ready")
                                 listener.onEngineReady(httpApiPort, engineApiPort, boundPackage, boundVersion)
                             }
                             return@Thread
@@ -182,7 +182,7 @@ class AceEngineManager(private val context: Context, private val listener: Engin
                             Thread.sleep(600)
                             if (isSocketAlive("127.0.0.1", 62062) || isSocketAlive("127.0.0.1", 6878)) {
                                 boundPackage = "com.streamvault.plugin.hap"
-                                boundVersion = "AceServe 3.2.17 Headless (0 Ads)"
+                                boundVersion = "AceServe 3.2.17 Headless"
                                 httpApiPort = 6878
                                 engineApiPort = 62062
                                 Log.i(TAG, "AceServe woke up on 127.0.0.1:62062!")
