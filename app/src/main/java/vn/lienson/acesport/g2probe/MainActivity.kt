@@ -184,6 +184,11 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
+            if (service.engineManager.isStarting || !service.engineManager.isEngineReady) {
+                Toast.makeText(this, "⏳ Engine Linux đang được tải / khởi chạy. Vui lòng đợi trạng thái báo SẴN SÀNG!", Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+
             val inputHash = binding.etTestInfohash.text?.toString()?.trim() ?: ""
             val isCustomInput = inputHash.isNotEmpty()
             val targetHash = when {

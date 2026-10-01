@@ -181,21 +181,18 @@ class G2OrchestratorService : Service(), AceEngineManager.EngineListener {
                     continue
                 }
 
-                // 1. Kiểm tra Engine có bị crash/treo không
+                // 1. Kiểm tra Engine có bị crash/treo không (Kiểm tra cả socket lẫn HTTP response)
                 val isPort62062Alive = isSocketAlive("127.0.0.1", 62062)
-                val isPort6878Alive = isSocketAlive("127.0.0.1", 6878)
+                val isEngineAlive = isPort62062Alive || checkEngineHttpHealthy()
 
-                if (!isPort62062Alive && !isPort6878Alive) {
+                if (!isEngineAlive) {
                     consecutiveEngineDownCount++
-                    // Chỉ coi là chết nếu mất kết nối liên tục 4 lần (20 giây)
-                    if (consecutiveEngineDownCount >= 4) {
+                    // Chỉ coi là chết nếu mất kết nối liên tục 3 lần (15 giây)
+                    if (consecutiveEngineDownCount >= 3) {
                         consecutiveEngineDownCount = 0
                         if (configManager.isWatchdogAutoRecover) {
-                            AppLogger.w("WATCHDOG", "⚠️ Engine không phản hồi socket 62062/6878 liên tục 20s! Tự động khởi động lại Engine...")
-                            engineManager.unbind()
-                            delay(2000)
-                            engineManager.bindAndStart()
-                            delay(20000) // Cho thời gian khởi động lại
+                            AppLogger.w("WATCHDOG", "⚠️ Engine không phản hồi hoặc bị đơ liên tục 15s! Tự động khởi động lại Engine...")
+                            forceRestartEngine()
                         }
                     }
                 } else {
@@ -222,6 +219,30 @@ class G2OrchestratorService : Service(), AceEngineManager.EngineListener {
                 }
             }
         }
+    }
+
+    private fun checkEngineHttpHealthy(): Boolean {
+        return try {
+            val url = java.net.URL("http://127.0.0.1:6878/server/api?method=get_version")
+            val conn = url.openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 1500
+            conn.readTimeout = 1500
+            val code = conn.responseCode
+            conn.disconnect()
+            code in 200..403
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private suspend fun forceRestartEngine() {
+        engineManager.unbind()
+        try {
+            Runtime.getRuntime().exec(arrayOf("sh", "-c", "pkill -9 -f libacepython || killall -9 libacepython.so"))
+        } catch (_: Exception) {}
+        delay(2000)
+        engineManager.bindAndStart()
+        delay(15000)
     }
 
     private fun isSocketAlive(host: String, port: Int): Boolean {

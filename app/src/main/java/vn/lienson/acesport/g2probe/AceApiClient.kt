@@ -41,7 +41,7 @@ class AceApiClient(
         Log.d(TAG, "Connecting to AceStream Telnet API at $host:$apiPort")
         AppLogger.i("TELNET", "Đang mở Socket kết nối tới Engine tại $host:$apiPort...")
         val s = Socket(host, apiPort)
-        s.soTimeout = 60000
+        s.soTimeout = 12000
         socket = s
         val r = BufferedReader(InputStreamReader(s.getInputStream()))
         val w = PrintWriter(OutputStreamWriter(s.getOutputStream()), true)
@@ -56,7 +56,7 @@ class AceApiClient(
         var authenticated = false
         var engineHttpPort = 6878
 
-        val deadline = System.currentTimeMillis() + 15000
+        val deadline = System.currentTimeMillis() + 8000
         while (System.currentTimeMillis() < deadline && !authenticated) {
             val line = r.readLine() ?: break
             Log.d(TAG, "RECV [AUTH]: $line")
@@ -107,7 +107,7 @@ class AceApiClient(
 
         var loaded = false
         var canonicalInfohash = if (isInfohash) value else ""
-        val loadDeadline = System.currentTimeMillis() + 20000
+        val loadDeadline = System.currentTimeMillis() + 10000
         while (System.currentTimeMillis() < loadDeadline && !loaded) {
             val line = r.readLine() ?: break
             Log.d(TAG, "RECV [LOAD]: $line")
@@ -139,7 +139,7 @@ class AceApiClient(
 
         var playbackUrl: String? = null
         var infohash = ""
-        val startDeadline = System.currentTimeMillis() + 60000
+        val startDeadline = System.currentTimeMillis() + 12000
         while (System.currentTimeMillis() < startDeadline && playbackUrl == null) {
             val line = r.readLine() ?: break
             Log.d(TAG, "RECV [START]: $line")

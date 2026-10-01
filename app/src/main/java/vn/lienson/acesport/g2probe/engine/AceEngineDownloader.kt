@@ -20,9 +20,10 @@ object AceEngineDownloader {
 
     // Primary & Fallback release URLs for the Headless Linux ARM Engine runtime
     // (Clean Core Option 1: 0 embedded proprietary binaries in APK, 0 Android GUI, 0 AdMob ads)
-    const val PRIMARY_ENGINE_URL = "https://github.com/hongson117/aceHub/releases/download/v1.0.5/ace-engine-armv7.zip"
-    const val MIRROR_ENGINE_URL = "https://ghproxy.net/https://github.com/hongson117/aceHub/releases/download/v1.0.5/ace-engine-armv7.zip"
-    const val FALLBACK_ENGINE_URL = "https://cdn.jsdelivr.net/gh/hongson117/aceHub@v1.0.5/release_assets/ace-engine-armv7.zip"
+    const val PRIMARY_ENGINE_URL = "https://github.com/hongson117/aceHub/releases/download/v1.0.6/ace-engine-armv7.zip"
+    const val MIRROR_ENGINE_URL = "https://ghproxy.net/https://github.com/hongson117/aceHub/releases/download/v1.0.6/ace-engine-armv7.zip"
+    const val FALLBACK_ENGINE_URL = "https://github.com/hongson117/aceHub/releases/download/v1.0.5/ace-engine-armv7.zip"
+    const val MIRROR2_ENGINE_URL = "https://ghproxy.net/https://github.com/hongson117/aceHub/releases/download/v1.0.5/ace-engine-armv7.zip"
 
     // Expected cryptographic SHA-256 hash for verified Linux ARM headless engine archive
     const val EXPECTED_SHA256 = "A0C0617A4C54D44210533AE0EC6FBCAC933BDFB065FDDF5AD4B2587BC5448D52"
@@ -42,9 +43,10 @@ object AceEngineDownloader {
         listener: DownloadListener? = null
     ): File {
         val urls = listOf(
-            PRIMARY_ENGINE_URL to "Máy chủ chính (GitHub CDN v1.0.3)",
-            MIRROR_ENGINE_URL to "Máy chủ dự phòng (Asia Mirror CDN v1.0.3)",
-            FALLBACK_ENGINE_URL to "Máy chủ dự phòng (GitHub CDN v1.0.2)"
+            PRIMARY_ENGINE_URL to "Máy chủ chính (GitHub Release v1.0.6)",
+            MIRROR_ENGINE_URL to "Máy chủ tăng tốc (Asia Mirror CDN v1.0.6)",
+            FALLBACK_ENGINE_URL to "Máy chủ dự phòng (GitHub Release v1.0.5)",
+            MIRROR2_ENGINE_URL to "Máy chủ tăng tốc dự phòng (Asia Mirror CDN v1.0.5)"
         )
         var lastException: Exception? = null
 

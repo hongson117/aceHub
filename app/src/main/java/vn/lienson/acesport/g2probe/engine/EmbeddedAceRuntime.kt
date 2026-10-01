@@ -44,7 +44,7 @@ class EmbeddedAceRuntime(private val context: Context) {
     @Throws(IOException::class)
     fun prepare(progressListener: AceEngineDownloader.DownloadListener? = null) {
         val root = rootDir()
-        val marker = File(root, ".prepared-ace-$abi-v6")
+        val marker = File(root, ".prepared-ace-$abi-v7")
 
         // 1. Strict Fast Check: Verify marker AND all essential binary components
         if (marker.exists() && isRuntimeIntact(root)) {
@@ -71,7 +71,7 @@ class EmbeddedAceRuntime(private val context: Context) {
             // Verify integrity of unpacked staging files
             if (!isRuntimeIntact(staging)) {
                 deleteRecursively(staging)
-                throw IOException("Gói giải nén bị thiếu các tệp thành phần bắt buộc (acestreamengine, Core.so, CoreApp.so, cacert.pem)")
+                throw IOException("Gói giải nén bị thiếu các tệp thành phần bắt buộc (Core.so, CoreApp.so, cacert.pem, python)")
             }
 
             // Rollback-safe directory swap:
@@ -111,12 +111,13 @@ class EmbeddedAceRuntime(private val context: Context) {
         updateMainScript(root)
     }
 
-    private fun isRuntimeIntact(dir: File): Boolean {
-        return File(dir, "acestreamengine").exists() &&
-               File(dir, "Core.so").exists() &&
-               File(dir, "CoreApp.so").exists() &&
-               File(dir, "cacert.pem").exists() &&
-               File(dir, "python/lib/stdlib").exists()
+    fun isRuntimeIntact(dir: File): Boolean {
+        val hasCore = File(dir, "acestreamengine/Core.so").exists() || File(dir, "Core.so").exists()
+        val hasCoreApp = File(dir, "acestreamengine/CoreApp.so").exists() || File(dir, "CoreApp.so").exists()
+        val hasCacert = File(dir, "data/cacert.pem").exists() || File(dir, "cacert.pem").exists()
+        val hasPython = File(dir, "python/lib/stdlib").exists() || File(dir, "python").exists()
+        val hasModules = File(dir, "modules.zip").exists()
+        return hasCore && hasCoreApp && hasCacert && hasPython && hasModules
     }
 
     private fun updateMainScript(root: File) {
@@ -139,6 +140,11 @@ class EmbeddedAceRuntime(private val context: Context) {
         val root = rootDir()
         val cache = cacheDir()
         if (!cache.exists() && !cache.mkdirs()) throw IOException("Cannot create $cache")
+        try {
+            File(root, ".acestream_pid").delete()
+            File(root, ".lock").delete()
+            File(cache, ".ACEStream/acestream.sqlite-journal").delete()
+        } catch (_: Exception) {}
         val androidInfo = File(root, "android-runtime.json")
         AceServeAndroidInfo.write(appContext, abi, root, cache, androidInfo)
 
