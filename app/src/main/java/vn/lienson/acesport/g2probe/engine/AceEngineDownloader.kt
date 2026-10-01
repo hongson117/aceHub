@@ -22,7 +22,7 @@ object AceEngineDownloader {
     // (Clean Core Option 1: 0 embedded proprietary binaries in APK, 0 Android GUI, 0 AdMob ads)
     const val PRIMARY_ENGINE_URL = "https://github.com/hongson117/aceHub/releases/download/v1.0.5/ace-engine-armv7.zip"
     const val MIRROR_ENGINE_URL = "https://ghproxy.net/https://github.com/hongson117/aceHub/releases/download/v1.0.5/ace-engine-armv7.zip"
-    const val FALLBACK_ENGINE_URL = "https://github.com/hongson117/aceHub/releases/download/v1.0.4/ace-engine-armv7.zip"
+    const val FALLBACK_ENGINE_URL = "https://cdn.jsdelivr.net/gh/hongson117/aceHub@v1.0.5/release_assets/ace-engine-armv7.zip"
 
     // Expected cryptographic SHA-256 hash for verified Linux ARM headless engine archive
     const val EXPECTED_SHA256 = "A0C0617A4C54D44210533AE0EC6FBCAC933BDFB065FDDF5AD4B2587BC5448D52"
