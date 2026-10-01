@@ -21,7 +21,6 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "AceStreamHub"
-        private const val TEST_INFOHASH = "73d24aeff6515abb236ea8a3e77d89fe0b04b665" // Eleven Sports 1 HD
         @Volatile
         var instance: MainActivity? = null
             private set
@@ -177,7 +176,7 @@ class MainActivity : AppCompatActivity() {
             updateModeButtons(config)
         }
 
-        // Test Stream (Default or custom Infohash)
+        // Kiểm tra tín hiệu luồng theo Infohash / Content ID do người dùng nhập
         binding.btnTestStream.setOnClickListener {
             val service = G2OrchestratorService.instance
             if (service == null || !config.isHubEnabled) {
@@ -187,27 +186,29 @@ class MainActivity : AppCompatActivity() {
 
             val inputHash = binding.etTestInfohash.text?.toString()?.trim() ?: ""
             val targetHash = if (inputHash.isNotEmpty()) inputHash else config.defaultChannelId
-            val isCustom = inputHash.isNotEmpty() && inputHash != TEST_INFOHASH
-            val testLabel = if (isCustom) "Infohash ${targetHash.take(8)}..." else "Luồng mặc định"
 
-            // Ghi nhớ link cũ / mặc định vào SharedPreferences để bảo lưu khi reboot
-            config.defaultChannelId = targetHash
-            config.defaultSourceType = "infohash"
-            AppLogger.i("CONFIG", "💾 Đã ghi nhớ luồng phát: $targetHash (Bảo lưu khi khởi động lại)")
+            if (targetHash.isEmpty()) {
+                Toast.makeText(this, "Vui lòng nhập Infohash/Content ID hoặc gửi luồng từ thiết bị khác!", Toast.LENGTH_LONG).show()
+                AppLogger.w("TEST", "Chưa nhập mã luồng. Trạm sẵn sàng nhận luồng từ thiết bị trong mạng LAN.")
+                return@setOnClickListener
+            }
 
-            Toast.makeText(this, "Đang nạp $testLabel...", Toast.LENGTH_SHORT).show()
-            binding.tvActiveChannel.text = "Đang nạp $testLabel..."
-            AppLogger.i("TEST", "👉 Kiểm tra luồng ($testLabel): $targetHash")
+            val testLabel = "Infohash ${targetHash.take(12)}..."
+            Toast.makeText(this, "Đang kiểm tra tín hiệu $testLabel...", Toast.LENGTH_SHORT).show()
+            binding.tvActiveChannel.text = "Đang kiểm tra tín hiệu..."
+            AppLogger.i("TEST", "👉 Đang kết nối kiểm tra tín hiệu luồng: $targetHash")
 
             scope.launch(Dispatchers.IO) {
                 val ok = service.proxyServer?.prewarmStream(targetHash, "infohash", persistent = true) ?: false
                 launch(Dispatchers.Main) {
                     if (ok) {
-                        Toast.makeText(this@MainActivity, "$testLabel đã sẵn sàng!", Toast.LENGTH_SHORT).show()
-                        AppLogger.s("TEST", "🟢 $testLabel đã sẵn sàng phát và được bảo lưu khi reboot!")
+                        config.defaultChannelId = targetHash
+                        config.isAlwaysHotStream = true
+                        Toast.makeText(this@MainActivity, "🟢 Đã thu được tín hiệu luồng thành công!", Toast.LENGTH_SHORT).show()
+                        AppLogger.s("TEST", "🟢 Tín hiệu luồng trả về hợp lệ! Đã lưu cấu hình phát.")
                     } else {
-                        Toast.makeText(this@MainActivity, "Chưa lấy được luồng từ Engine (xem log bên dưới)", Toast.LENGTH_LONG).show()
-                        AppLogger.e("TEST", "🔴 Không thể lấy luồng $testLabel từ Engine. Xem chi tiết trong log.")
+                        Toast.makeText(this@MainActivity, "🔴 Chưa thu được tín hiệu từ nguồn phát / Engine từ chối", Toast.LENGTH_LONG).show()
+                        AppLogger.e("TEST", "🔴 Không có tín hiệu trả về từ nguồn phát cho mã: $targetHash")
                     }
                 }
             }
@@ -358,7 +359,11 @@ class MainActivity : AppCompatActivity() {
         binding.tvServerUrl.text = "http://$localIp:$port"
         binding.tvBrowserLogHint.text = "Xem trên web: http://$localIp:$port/log"
         if (binding.etTestInfohash.text.isNullOrEmpty()) {
-            binding.etTestInfohash.hint = "Ghi nhớ boot: ${config.defaultChannelId.take(12)}... (nhập mới để đổi)"
+            binding.etTestInfohash.hint = if (config.defaultChannelId.isNotEmpty()) {
+                "Luồng đã lưu: ${config.defaultChannelId.take(12)}... (nhập mới để đổi)"
+            } else {
+                "Nhập Infohash / Content ID để kiểm tra tín hiệu..."
+            }
         }
 
         if (config.isHubEnabled && service != null && service.proxyServer != null) {
@@ -372,22 +377,17 @@ class MainActivity : AppCompatActivity() {
 
             val activeStream = service.proxyServer?.latestActiveStream
             if (activeStream != null && (activeStream.clientCount > 0 || activeStream.speedKbps > 0)) {
-                val chDisplay = if (activeStream.channelId == TEST_INFOHASH) {
-                    "Luồng mặc định (${activeStream.channelId.take(8)}...)"
-                } else {
-                    "Infohash: ${activeStream.channelId.take(12)}...${activeStream.channelId.takeLast(6)}"
-                }
-                binding.tvActiveChannel.text = chDisplay
+                binding.tvActiveChannel.text = "Infohash: ${activeStream.channelId.take(12)}...${activeStream.channelId.takeLast(6)}"
                 binding.tvClientCount.text = "${activeStream.clientCount} thiết bị (Clients)"
                 binding.tvBitrate.text = "${activeStream.speedKbps} KB/s (~${String.format(java.util.Locale.US, "%.1f", activeStream.speedKbps * 8 / 1024.0)} Mbps)"
                 binding.tvPeers.text = "${activeStream.peers} Peers"
-            } else if (activeStream != null) {
-                binding.tvActiveChannel.text = "${activeStream.channelId.take(12)}... (Đang chờ kết nối)"
+            } else if (activeStream != null && activeStream.channelId.isNotEmpty()) {
+                binding.tvActiveChannel.text = "${activeStream.channelId.take(12)}... (Đang chờ tín hiệu)"
                 binding.tvClientCount.text = "0 thiết bị"
                 binding.tvBitrate.text = "${activeStream.speedKbps} KB/s"
                 binding.tvPeers.text = "${activeStream.peers} Peers"
             } else {
-                binding.tvActiveChannel.text = "Sẵn sàng (Chờ kết nối)"
+                binding.tvActiveChannel.text = "Trạm rảnh rỗi (Chờ luồng từ thiết bị phát)"
                 binding.tvClientCount.text = "0 thiết bị"
                 binding.tvBitrate.text = "0 KB/s"
                 binding.tvPeers.text = "0 Peers"

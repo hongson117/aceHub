@@ -10,6 +10,7 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 
@@ -19,8 +20,12 @@ object AceEngineDownloader {
 
     // Primary & Fallback release URLs for the Headless Linux ARM Engine runtime
     // (Clean Core Option 1: 0 embedded proprietary binaries in APK, 0 Android GUI, 0 AdMob ads)
-    const val PRIMARY_ENGINE_URL = "https://github.com/hongson117/aceHub/releases/download/v1.0.2/ace-engine-armv7.zip"
-    const val MIRROR_ENGINE_URL = "https://ghproxy.net/https://github.com/hongson117/aceHub/releases/download/v1.0.2/ace-engine-armv7.zip"
+    const val PRIMARY_ENGINE_URL = "https://github.com/hongson117/aceHub/releases/download/v1.0.3/ace-engine-armv7.zip"
+    const val MIRROR_ENGINE_URL = "https://ghproxy.net/https://github.com/hongson117/aceHub/releases/download/v1.0.3/ace-engine-armv7.zip"
+    const val FALLBACK_ENGINE_URL = "https://github.com/hongson117/aceHub/releases/download/v1.0.2/ace-engine-armv7.zip"
+
+    // Expected cryptographic SHA-256 hash for verified Linux ARM headless engine archive
+    const val EXPECTED_SHA256 = "A0C0617A4C54D44210533AE0EC6FBCAC933BDFB065FDDF5AD4B2587BC5448D52"
 
     // Expected minimum file size for the verified Linux ARM headless engine archive (~42MB)
     const val MIN_EXPECTED_SIZE = 40_000_000L
@@ -37,8 +42,9 @@ object AceEngineDownloader {
         listener: DownloadListener? = null
     ): File {
         val urls = listOf(
-            PRIMARY_ENGINE_URL to "Máy chủ chính (GitHub CDN)",
-            MIRROR_ENGINE_URL to "Máy chủ dự phòng (Asia Mirror CDN)"
+            PRIMARY_ENGINE_URL to "Máy chủ chính (GitHub CDN v1.0.3)",
+            MIRROR_ENGINE_URL to "Máy chủ dự phòng (Asia Mirror CDN v1.0.3)",
+            FALLBACK_ENGINE_URL to "Máy chủ dự phòng (GitHub CDN v1.0.2)"
         )
         var lastException: Exception? = null
 
@@ -142,11 +148,22 @@ object AceEngineDownloader {
             }
 
             if (destFile.length() < MIN_EXPECTED_SIZE) {
+                destFile.delete()
                 throw IOException("Tệp tải về kích thước không hợp lệ (${destFile.length()} bytes < $MIN_EXPECTED_SIZE bytes)")
             }
 
+            AppLogger.i("DOWNLOAD", "Đang xác thực toàn vẹn mã băm SHA-256...")
+            val actualHash = calculateSha256(destFile)
+            if (!actualHash.equals(EXPECTED_SHA256, ignoreCase = true)) {
+                destFile.delete()
+                val errMsg = "Mã băm SHA-256 không khớp! Kỳ vọng: $EXPECTED_SHA256, Thực tế: $actualHash"
+                AppLogger.e("DOWNLOAD", errMsg)
+                throw IOException(errMsg)
+            }
+            AppLogger.s("DOWNLOAD", "Xác thực SHA-256 thành công (Trùng khớp 100%): ${actualHash.take(16)}...")
+
             val finalMb = String.format(java.util.Locale.US, "%.1f", destFile.length() / (1024.0 * 1024.0))
-            AppLogger.s("DOWNLOAD", "Đã tải xong toàn bộ Engine Linux sạch ($finalMb MB)!")
+            AppLogger.s("DOWNLOAD", "Đã tải xong và xác thực toàn vẹn Engine Linux sạch ($finalMb MB)!")
             listener?.onDownloadComplete(destFile)
             return destFile
         } catch (e: Exception) {
@@ -156,6 +173,22 @@ object AceEngineDownloader {
         } finally {
             connection?.disconnect()
         }
+    }
+
+    private fun calculateSha256(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        FileInputStream(file).use { fis ->
+            val buffer = ByteArray(64 * 1024)
+            var bytesRead: Int
+            while (fis.read(buffer).also { bytesRead = it } != -1) {
+                digest.update(buffer, 0, bytesRead)
+            }
+        }
+        val sb = StringBuilder()
+        for (b in digest.digest()) {
+            sb.append(String.format("%02X", b))
+        }
+        return sb.toString()
     }
 
     @Throws(IOException::class)

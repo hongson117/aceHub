@@ -108,16 +108,18 @@ adb connect <IP_ANDROID_BOX>
 adb install -r aceHub.apk
 ```
 
-> **Đặc quyền kiến trúc Clean Core 100% (Từ phiên bản v1.0.2):**
-> * **Bản cài siêu nhẹ (~5.5 MB):** 100% mã nguồn mở (MIT), tuân thủ tuyệt đối quy định phân phối của GitHub.
-> * **Tự động chuẩn bị Engine Linux Headless:** Khi khởi chạy lần đầu trên máy mới, ứng dụng tự động tải gói Engine Linux ARM nguyên bản (`ace-engine-armv7.zip`) từ Release Asset chính thức (có máy chủ dự phòng CDN châu Á). Tiến trình tải và giải nén được hiển thị trực quan theo thời gian thực trên TV.
-> * **100% Không Quảng Cáo (Zero Ads):** Bản Engine Linux là daemon điều phối ngầm (Console Daemon), hoàn toàn không chứa Android GUI hay AdMob SDK như bản app thông thường.
-> * **Bảo lưu và khởi động tức thì:** Nếu thiết bị đã có sẵn Engine (hoặc nâng cấp từ bản trước), AceHub tái sử dụng ngay lập tức mà không cần tải lại, mở cổng phát sóng chỉ sau 0.5 giây.
+> **Đặc quyền kiến trúc Clean Core 100% (Từ phiên bản v1.0.3):**
+> * **Bản cài siêu nhẹ (~5.5 MB):** 100% mã nguồn mở (MIT), cài đặt ban đầu là vỏ rỗng hoàn toàn, không nhúng sẵn bất kỳ luồng phát hay kênh truyền hình nào.
+> * **Tự động chuẩn bị Engine Linux Headless:** Khi khởi chạy lần đầu trên máy mới, ứng dụng tự động tải gói Engine Linux ARM nguyên bản (`ace-engine-armv7.zip`) từ Release Asset chính thức với xác thực mã băm SHA-256 toàn vẹn trước khi giải nén.
+> * **Tiến trình ngầm không chứa AdMob SDK:** Sử dụng daemon điều phối ngầm (Console Daemon), hoàn toàn không chứa các thành phần giao diện đồ họa Android GUI hay Google AdMob SDK.
+> * **Bảo vệ mạng LAN cấp ứng dụng:** Toàn bộ API điều khiển trạm (`/config`, `/stop`, `/prewarm`) được kiểm tra và giới hạn nghiêm ngặt chỉ cho phép các máy trong mạng cục bộ (LAN / RFC1918) và Loopback truy cập (tự động từ chối HTTP 403 đối với các kết nối từ Internet WAN).
+> * **Bộ đệm 100MB RAM thống nhất:** Đồng bộ cấu hình bộ nhớ đệm 100MB trong RAM (`--live-cache-type memory`), không ghi đĩa flash gây hao mòn bộ nhớ TV Box.
 
 Sau khi cài đặt:
 1. Mở ứng dụng **AceHub** trên màn hình Android TV.
 2. Thiết bị sẽ tự động chuẩn bị Engine (lần đầu mất ~10 giây tải qua mạng; các lần sau bật lên là chạy ngay).
-3. Khi màn hình báo `🟢 ĐANG HOẠT ĐỘNG`, bấm nút **Ẩn chạy ngầm (Home)** trên remote để trạm tiếp tục phát sóng 24/7 mà không làm phiền màn hình tivi.
+3. Nhập mã Infohash / Content ID cần phát hoặc gửi lệnh phát từ bất kỳ thiết bị nào trong mạng LAN.
+4. Khi màn hình báo `🟢 ĐANG HOẠT ĐỘNG`, bấm nút **Ẩn chạy ngầm (Home)** trên remote để trạm tiếp tục phát sóng 24/7 mà không làm phiền màn hình tivi.
 
 ---
 
@@ -179,7 +181,7 @@ Sau khi chạy xong, máy chủ của bạn ngay lập tức mở cổng `8000`:
 ### Lệnh Biên Dịch
 ```bash
 # Clone repository
-git clone https://github.com/<your-username>/aceHub.git
+git clone https://github.com/hongson117/aceHub.git
 cd aceHub
 
 # Cấp quyền chạy cho gradlew (Linux / macOS)
@@ -198,9 +200,13 @@ Tệp APK kết quả sẽ được tạo tại:
 ## 7. Tuân Thủ Quy Chuẩn Mã Nguồn Mở (Clean-Room Standard)
 
 Dự án này được xây dựng với mục tiêu tuân thủ 100% tiêu chuẩn phân phối mã nguồn mở trên GitHub:
-1. **0 Proprietary Blob:** Không chứa mã nguồn vi phạm bản quyền hay các tệp nhị phân đóng kín.
-2. **Standard Android CI/CD:** Tích hợp sẵn kịch bản GitHub Actions (`.github/workflows/build-apk.yml`) tự động kiểm tra cú pháp và build `aceHub.apk` trực tiếp trên đám mây khi gắn thẻ phiên bản (`git tag v1.0.0`).
+1. **0 Proprietary Blob:** Không chứa mã nguồn vi phạm bản quyền hay các tệp nhị phân đóng kín trong cây thư mục mã nguồn Git.
+2. **Standard Android CI/CD:** Tích hợp sẵn kịch bản GitHub Actions (`.github/workflows/build-apk.yml`) tự động kiểm tra cú pháp và build `aceHub.apk` trực tiếp trên đám mây khi gắn thẻ phiên bản.
 3. **Giấy phép MIT:** Tự do sử dụng, chỉnh sửa và triển khai cho các dự án cá nhân hoặc cộng đồng.
+
+### 7.1 Thành Phần Bên Thứ Ba & Tương Thích Sandbox (Third-Party & Sandbox Shims)
+* **`libacepython.so`:** Trình chạy JNI nhúng mã nguồn mở cho Python trên Android, tuân theo giấy phép Python Software Foundation License / Apache 2.0.
+* **Android Compatibility Shims (`main_android.py`):** Cung cấp các cấu trúc tương thích chuẩn với cơ chế bảo mật SELinux của Android (như `/proc/cpuinfo` và `/proc/meminfo` giả lập cho sandbox không có quyền root) để Python tiêu chuẩn có thể khởi động bình thường. Hoàn toàn không can thiệp DRM, không can thiệp cơ chế kiểm tra bản quyền và không thay đổi logic cấp phép của Engine.
 
 ---
 
@@ -213,7 +219,7 @@ Dự án được phân phối dưới giấy phép **[MIT License](LICENSE)**. 
 > **Important Legal Disclaimer / Tuyên Bố Pháp Lý:**  
 > 
 > **English:**  
-> AceHub is an open-source, neutral network stream proxy and gateway utility designed for local area networks (LAN). **AceHub does not provide, host, store, scrape, or distribute any video streams, media files, or copyrighted television channels.** The application acts solely as a standard HTTP socket pipe between local clients and protocol engines via official/standard APIs. Users are solely responsible for obtaining and verifying the legality, distribution rights, and origin of any stream identifiers (infohashes / content IDs) they choose to process with this software. Third-party components and engines are used subject to their respective licenses and terms of service; AceHub does not emulate unauthorized access levels or circumvent any technological protection measures (TPM).
+> AceHub is an open-source, neutral network stream proxy and gateway utility designed for local area networks (LAN). **AceHub does not provide, curate, scrape, host, or operate any catalogue of broadcasts or copyrighted channels.** The software functions solely as a standard local HTTP socket relay that transfers stream data actively configured and supplied by the user. Users are solely responsible for obtaining and verifying the legality, distribution rights, and origin of any stream identifiers (infohashes / content IDs) they choose to process with this software. Third-party protocol engines are governed by their respective licenses and terms of service; AceHub does not emulate unauthorized access levels or circumvent any technological protection measures (TPM).
 > 
 > **Tiếng Việt:**  
-> AceHub là công cụ quản lý và chuyển tiếp luồng mạng nội bộ (LAN Stream Proxy & Gateway) mã nguồn mở. Phần mềm hoạt động như một cầu nối giao thức mạng thuần túy, **không lưu trữ, không thu thập (scrape) và không cung cấp sẵn bất kỳ danh sách kênh hay quyền truy cập nội dung có bản quyền nào**. Việc phát và sử dụng luồng phát phụ thuộc hoàn toàn vào nguồn do người dùng tự cung cấp và tuân thủ các giấy phép dịch vụ của bên thứ ba. AceHub không can thiệp, không giả lập quyền truy cập trái phép và không vô hiệu hóa bất kỳ biện pháp công nghệ bảo vệ quyền nào.
+> AceHub là công cụ quản lý và chuyển tiếp luồng mạng nội bộ (LAN Stream Proxy & Gateway) mã nguồn mở. **AceHub không cung cấp sẵn, tuyển chọn, thu thập (scrape) hoặc vận hành bất kỳ danh mục nguồn phát hay kênh truyền hình có bản quyền nào.** Phần mềm hoạt động như một cầu nối socket HTTP nội bộ chuyển tiếp dữ liệu luồng do người dùng chủ động cấu hình. Người dùng chịu hoàn toàn trách nhiệm về tính hợp pháp và quyền sử dụng đối với các định danh luồng (infohash / content ID) được nạp vào phần mềm. Việc kết nối tới engine giao thức tuân thủ các giấy phép dịch vụ tương ứng; AceHub không can thiệp, không giả lập quyền truy cập trái phép và không vô hiệu hóa bất kỳ biện pháp công nghệ bảo vệ quyền nào.

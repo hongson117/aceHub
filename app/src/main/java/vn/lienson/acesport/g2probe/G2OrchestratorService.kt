@@ -258,20 +258,22 @@ class G2OrchestratorService : Service(), AceEngineManager.EngineListener {
         MainActivity.instance?.showEngineStatus(lanIp, configManager.proxyPort, "Thành công")
         MainActivity.instance?.updateEngineSetupStatus("READY", "Sẵn sàng (Port $httpPort/$enginePort)")
 
-        // Tự động khôi phục và giữ nguyên luồng cũ sau khi khởi động / restart (Headless 24/7)
+        // Chỉ khôi phục luồng nếu người dùng đã chủ động kích hoạt và cấu hình lưu trước đó
         val savedChannel = configManager.defaultChannelId
         val savedType = configManager.defaultSourceType
         if (configManager.isAlwaysHotStream && savedChannel.isNotEmpty()) {
-            AppLogger.i("SYSTEM", "🔄 Khôi phục và giữ nguyên luồng cũ: ${savedChannel.take(12)}... ($savedType)")
+            AppLogger.i("SYSTEM", "🔄 Khôi phục luồng do người dùng chỉ định: ${savedChannel.take(12)}... ($savedType)")
             scope.launch(Dispatchers.IO) {
                 delay(2000)
                 val ok = proxyServer?.prewarmStream(savedChannel, savedType, persistent = true) ?: false
                 if (ok) {
-                    AppLogger.s("SYSTEM", "🟢 Đã giữ nguyên và nạp sẵn luồng cũ thành công! Trạm sẵn sàng hoạt động không cần màn hình.")
+                    AppLogger.s("SYSTEM", "🟢 Đã kết nối lại tín hiệu luồng thành công: http://$lanIp:${configManager.proxyPort}/live")
                 } else {
-                    AppLogger.w("SYSTEM", "⚠️ Đang tiếp tục nạp luồng cũ...")
+                    AppLogger.w("SYSTEM", "⚠️ Chưa thu được tín hiệu luồng từ nguồn phát.")
                 }
             }
+        } else {
+            AppLogger.s("SYSTEM", "🟢 Trạm phát sẵn sàng ở chế độ rảnh rỗi (Idle). Đang chờ tín hiệu luồng từ thiết bị trong mạng LAN...")
         }
     }
 

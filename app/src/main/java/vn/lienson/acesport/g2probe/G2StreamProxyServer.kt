@@ -154,6 +154,11 @@ class G2StreamProxyServer(
         }
     }
 
+    private fun isLocalOrLanClient(clientSock: Socket): Boolean {
+        val addr = clientSock.inetAddress ?: return false
+        return addr.isLoopbackAddress || addr.isSiteLocalAddress || addr.isLinkLocalAddress || addr.isAnyLocalAddress
+    }
+
     private suspend fun handleClient(clientSock: Socket) = withContext(Dispatchers.IO) {
         try {
             clientSock.soTimeout = 15000
@@ -188,6 +193,15 @@ class G2StreamProxyServer(
             }
 
             val rawUri = parts[1]
+
+            // Enforce LAN-only restriction on management and configuration APIs
+            val isManagementUri = rawUri.startsWith("/config") || rawUri.startsWith("/prewarm") || rawUri.startsWith("/stop") || rawUri.startsWith("/restart")
+            if (isManagementUri && !isLocalOrLanClient(clientSock)) {
+                Log.w(TAG, "Blocked unauthorized WAN request to management API: $rawUri from ${clientSock.inetAddress}")
+                sendHttpError(out, 403, "Forbidden: Management API is restricted to local LAN network")
+                clientSock.close()
+                return@withContext
+            }
 
             // 1. Dashboard UI
             if (rawUri == "/" || rawUri == "/index.html" || rawUri == "/dashboard") {

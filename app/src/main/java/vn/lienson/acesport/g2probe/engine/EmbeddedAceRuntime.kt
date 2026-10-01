@@ -44,62 +44,60 @@ class EmbeddedAceRuntime(private val context: Context) {
     @Throws(IOException::class)
     fun prepare(progressListener: AceEngineDownloader.DownloadListener? = null) {
         val root = rootDir()
-        val marker = File(root, ".prepared-ace-$abi-v5")
-        val engineBin = File(root, "acestreamengine")
-        val coreSo = File(root, "Core.so")
+        val marker = File(root, ".prepared-ace-$abi-v6")
 
-        // 1. Fast check: If already installed and intact (e.g. upgraded from v1.0.1 or previous run), reuse immediately!
-        if (marker.exists() && (engineBin.exists() || coreSo.exists())) {
-            AppLogger.s("ENGINE", "Runtime Engine Linux sạch đã có sẵn trong máy (Khởi động tức thì).")
+        // 1. Strict Fast Check: Verify marker AND all essential binary components
+        if (marker.exists() && isRuntimeIntact(root)) {
+            AppLogger.s("ENGINE", "Runtime Engine Linux sạch đã có sẵn và toàn vẹn (Khởi động tức thì).")
             updateMainScript(root)
             return
         }
 
-        AppLogger.i("ENGINE", "Chuẩn bị môi trường AceStream Linux sạch ($abi)...")
-        deleteRecursively(root)
-        if (!root.mkdirs() && !root.isDirectory) {
-            AppLogger.e("ENGINE", "Không thể tạo thư mục: ${root.absolutePath}")
-            throw IOException("Cannot create $root")
+        AppLogger.i("ENGINE", "Chuẩn bị nạp mới môi trường AceStream Linux sạch ($abi)...")
+        val staging = File(appContext.filesDir, "aceserve/${abi}_staging")
+        deleteRecursively(staging)
+        if (!staging.mkdirs() && !staging.isDirectory) {
+            throw IOException("Cannot create staging directory: ${staging.absolutePath}")
         }
 
-        // 2. Check if zip exists in assets (for custom offline builds)
-        val assetZipPath = "aceserve/$abi/${zipName()}"
-        val tempZip = File(appContext.cacheDir, zipName())
-        var unpacked = false
         try {
-            AppLogger.i("ENGINE", "Kiểm tra gói cài đặt nhúng sẵn...")
-            AssetCopier.copyFile(appContext, assetZipPath, tempZip)
-            AppLogger.i("ENGINE", "Đang giải nén bộ cài Engine từ assets (~${tempZip.length() / (1024 * 1024)} MB)...")
-            unzip(tempZip, root)
-            tempZip.delete()
-            unpacked = true
-            AppLogger.s("ENGINE", "Giải nén bộ cài Engine thành công!")
-        } catch (_: Exception) {
-            // Expected for Clean Core APK: assets does not bundle the 42MB binary
-        }
+            AppLogger.i("ENGINE", "Bắt đầu tải Engine Linux sạch (0 quảng cáo) từ máy chủ phát hành...")
+            val downloaded = AceEngineDownloader.downloadEngineWithFallbacks(appContext, progressListener)
 
-        // 3. Clean Core Path: Download the official Headless Linux ARM Engine package
-        if (!unpacked) {
-            try {
-                AppLogger.i("ENGINE", "Bắt đầu tải Engine Linux sạch (0 quảng cáo) từ máy chủ phát hành...")
-                val downloaded = AceEngineDownloader.downloadEngineWithFallbacks(appContext, progressListener)
-                AppLogger.i("ENGINE", "Đang giải nén Engine Linux vào bộ nhớ thiết bị...")
-                AceEngineDownloader.unpackEngine(downloaded, root)
-                downloaded.delete()
-                unpacked = true
-                AppLogger.s("ENGINE", "Tải và giải nén Engine Linux sạch thành công!")
-            } catch (e: Exception) {
-                AppLogger.e("ENGINE", "Lỗi nạp Engine Linux: ${e.message}", e)
-                throw IOException("Could not prepare engine: ${e.message}", e)
+            AppLogger.i("ENGINE", "Đang giải nén Engine Linux vào thư mục tạm...")
+            AceEngineDownloader.unpackEngine(downloaded, staging)
+            downloaded.delete()
+
+            // Verify integrity of unpacked staging files
+            if (!isRuntimeIntact(staging)) {
+                deleteRecursively(staging)
+                throw IOException("Gói giải nén bị thiếu các tệp thành phần bắt buộc (acestreamengine, Core.so, CoreApp.so, cacert.pem)")
             }
-        }
 
-        if (unpacked) {
+            // Atomic switch from staging to root
+            deleteRecursively(root)
+            if (!staging.renameTo(root)) {
+                staging.copyRecursively(root, overwrite = true)
+                deleteRecursively(staging)
+            }
+
             marker.createNewFile()
             AppLogger.s("ENGINE", "Runtime Engine Linux sạch đã sẵn sàng tại: ${root.absolutePath}")
+        } catch (e: Exception) {
+            deleteRecursively(staging)
+            AppLogger.e("ENGINE", "Lỗi nạp Engine Linux: ${e.message}", e)
+            throw IOException("Could not prepare engine: ${e.message}", e)
         }
 
         updateMainScript(root)
+    }
+
+    private fun isRuntimeIntact(dir: File): Boolean {
+        return File(dir, "acestreamengine").exists() &&
+               File(dir, "Core.so").exists() &&
+               File(dir, "CoreApp.so").exists() &&
+               File(dir, "cacert.pem").exists() &&
+               File(dir, "python/lib/stdlib").exists()
     }
 
     private fun updateMainScript(root: File) {

@@ -20,13 +20,24 @@ class G2ConfigManager(context: Context) {
         private const val KEY_ACCESS_TOKEN = "engine_access_token"
         const val DEFAULT_ACCESS_TOKEN = "YA0WKoM9ov"
 
-        // Default: Eleven Sports 1 HD [PL]
-        const val DEFAULT_4K_INFOHASH = "73d24aeff6515abb236ea8a3e77d89fe0b04b665"
+        // Default: 100% Clean Core - No hardcoded channels or streams!
+        const val DEFAULT_CHANNEL_ID = ""
         const val DEFAULT_SOURCE_TYPE = "infohash"
+
+        // Legacy test hash to sanitize if upgraded from older versions
+        private const val LEGACY_TEST_HASH = "73d24aeff6515abb236ea8a3e77d89fe0b04b665"
     }
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+
+    init {
+        // Sanitize legacy hardcoded test channels from older versions
+        val currentId = prefs.getString(KEY_DEFAULT_CHANNEL_ID, "") ?: ""
+        if (currentId == LEGACY_TEST_HASH) {
+            prefs.edit().putString(KEY_DEFAULT_CHANNEL_ID, "").apply()
+        }
+    }
 
     var isAutoStartBoot: Boolean
         get() = prefs.getBoolean(KEY_AUTO_START_BOOT, true)
@@ -44,12 +55,16 @@ class G2ConfigManager(context: Context) {
         get() = prefs.getBoolean(KEY_HUB_ENABLED, true)
         set(value) = prefs.edit().putBoolean(KEY_HUB_ENABLED, value).apply()
 
+    // Default FALSE on clean install: idle until user explicitly configures a stream
     var isAlwaysHotStream: Boolean
-        get() = prefs.getBoolean(KEY_ALWAYS_HOT_STREAM, true)
+        get() = prefs.getBoolean(KEY_ALWAYS_HOT_STREAM, false)
         set(value) = prefs.edit().putBoolean(KEY_ALWAYS_HOT_STREAM, value).apply()
 
     var defaultChannelId: String
-        get() = prefs.getString(KEY_DEFAULT_CHANNEL_ID, DEFAULT_4K_INFOHASH) ?: DEFAULT_4K_INFOHASH
+        get() {
+            val id = prefs.getString(KEY_DEFAULT_CHANNEL_ID, DEFAULT_CHANNEL_ID) ?: DEFAULT_CHANNEL_ID
+            return if (id == LEGACY_TEST_HASH) "" else id
+        }
         set(value) = prefs.edit().putString(KEY_DEFAULT_CHANNEL_ID, value).apply()
 
     var defaultSourceType: String

@@ -1,7 +1,17 @@
+# ==============================================================================
+# AceHub Android Bootstrap & Compatibility Shim
+#
+# Purpose: Provide standard Android SELinux / Bionic libc sandbox compatibility
+# (e.g. synthetic /proc/cpuinfo and /proc/meminfo when restricted by Android UID policy).
+# This script does NOT alter DRM, tamper with authorization, or hook licensing.
+# All stream playback and caching parameters are purely passed via standard CLI.
+# ==============================================================================
+
 import builtins
 import gc
 import os
 import sys
+
 import threading
 import time
 import traceback
@@ -167,46 +177,9 @@ def cache_monitor():
             pass
         time.sleep(15)
 
-def patch_player_config():
-    patched_ids = set()
-    while True:
-        for obj in gc.get_objects():
-            try:
-                oid = id(obj)
-                if oid in patched_ids:
-                    continue
-                cls_name = type(obj).__name__
-                if cls_name == "CoreApp" and hasattr(obj, "set_playerconfig"):
-                    log("CoreApp detected; applying cache settings")
-                    obj.set_playerconfig("live_cache_type", "disk")
-                    obj.set_playerconfig("live_cache_size", 1048570000)
-                    obj.set_playerconfig("download_dir", CACHE_DIR)
-                    original_set = obj.set_playerconfig
-
-                    @wraps(original_set)
-                    def wrapped_set(key, value, *args, **kwargs):
-                        if key == "live_cache_type":
-                            value = "disk"
-                        if key == "download_dir":
-                            value = CACHE_DIR
-                        return original_set(key, value, *args, **kwargs)
-
-                    obj.set_playerconfig = wrapped_set
-                    try:
-                        setter = getattr(obj, "set_epg_system_sources_enabled", None)
-                        if setter:
-                            setter(False)
-                        obj.get_epg_system_sources_enabled = lambda *args, **kwargs: False
-                        log("CoreApp system EPG disabled")
-                    except Exception as exc:
-                        log("failed to disable CoreApp system EPG: {}".format(exc))
-                    patched_ids.add(oid)
-            except Exception:
-                pass
-        time.sleep(0.5)
-
+# Removed monkey patching thread to preserve pure command-line parameters (100MB RAM cache)
 threading.Thread(target=cache_monitor, name="cache-monitor", daemon=True).start()
-threading.Thread(target=patch_player_config, name="ace-patcher", daemon=True).start()
+
 
 def core_params():
     params = list(sys.argv)
@@ -247,9 +220,9 @@ def install_android_compat_module():
                 return int_value(ANDROID_MEMORY, "memoryClassMb", 64)
             if method == "adjustCacheSettings":
                 return json.dumps({
-                    "live_cache_type": "disk",
+                    "live_cache_type": "memory",
                     "cache_dir": CACHE_DIR,
-                    "live_cache_size": 1048570000,
+                    "live_cache_size": 104857600,
                 })
             if method == "getDeviceId":
                 return ANDROID_DEVICE.get("deviceId", "android")
