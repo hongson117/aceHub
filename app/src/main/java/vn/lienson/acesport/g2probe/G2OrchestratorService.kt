@@ -261,18 +261,41 @@ class G2OrchestratorService : Service(), AceEngineManager.EngineListener {
         if (!configManager.isAutoWakeTailscale) return
         scope.launch(Dispatchers.IO) {
             try {
-                // Đợi 8 giây cho hệ thống mạng LAN và Wi-Fi sẵn sàng
-                delay(8000)
-                val pm = packageManager
+                // Đợi 6 giây cho hệ thống mạng LAN và Wi-Fi sẵn sàng
+                delay(6000)
+                AppLogger.i("TAILSCALE", "🔄 Đang kiểm tra và đánh thức ứng dụng Tailscale tự động...")
                 val tailscalePkg = "com.tailscale.ipn"
-                val launchIntent = pm.getLaunchIntentForPackage(tailscalePkg)
-                if (launchIntent != null) {
-                    AppLogger.i("TAILSCALE", "🚀 Phát hiện Tailscale! Đang tự động đánh thức dịch vụ VPN...")
-                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
-                    startActivity(launchIntent)
-                    AppLogger.s("TAILSCALE", "🟢 Đã đánh thức Tailscale tự động kết nối ngầm cùng AceHub")
+                var launched = false
 
+                // 1. Thử gọi trực tiếp qua ComponentName (vượt qua hạn chế Android 11)
+                try {
+                    val directIntent = Intent().apply {
+                        component = android.content.ComponentName(tailscalePkg, "$tailscalePkg.MainActivity")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
+                    }
+                    startActivity(directIntent)
+                    launched = true
+                    AppLogger.i("TAILSCALE", "🚀 Đã phát lệnh khởi chạy trực tiếp tới Tailscale MainActivity")
+                } catch (e1: Exception) {
+                    Log.d(TAG, "Direct launch failed: ${e1.message}")
+                }
+
+                // 2. Fallback qua PackageManager nếu chưa chạy
+                if (!launched) {
+                    val pm = packageManager
+                    val launchIntent = pm.getLaunchIntentForPackage(tailscalePkg)
+                    if (launchIntent != null) {
+                        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
+                        startActivity(launchIntent)
+                        launched = true
+                        AppLogger.i("TAILSCALE", "🚀 Đã phát lệnh khởi chạy Tailscale qua PackageManager")
+                    }
+                }
+
+                if (launched) {
+                    AppLogger.s("TAILSCALE", "🟢 Đã đánh thức Tailscale tự động kết nối ngầm cùng AceHub")
                     // Sau 3 giây, tự động trả màn hình về Home để không che màn hình TV
                     delay(3000)
                     val homeIntent = Intent(Intent.ACTION_MAIN).apply {
@@ -281,10 +304,10 @@ class G2OrchestratorService : Service(), AceEngineManager.EngineListener {
                     }
                     startActivity(homeIntent)
                 } else {
-                    Log.d(TAG, "Tailscale package not installed, skip auto-wake.")
+                    AppLogger.w("TAILSCALE", "⚠️ Không tìm thấy gói cài đặt Tailscale (com.tailscale.ipn) trên máy")
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Không thể tự khởi động Tailscale: ${e.message}")
+                AppLogger.e("TAILSCALE", "⚠️ Lỗi khi khởi động Tailscale: ${e.message}")
             }
         }
     }

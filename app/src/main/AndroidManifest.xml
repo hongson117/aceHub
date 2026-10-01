@@ -9,6 +9,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 
     <uses-feature
         android:name="android.software.leanback"
@@ -19,6 +20,7 @@
 
     <!-- Package Visibility for Android 11+ (API 30+) -->
     <queries>
+        <package android:name="com.tailscale.ipn" />
         <package android:name="org.acestream.core.web" />
         <package android:name="org.acestream.core.atv" />
         <package android:name="org.acestream.media.atv" />
