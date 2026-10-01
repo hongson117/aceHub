@@ -99,22 +99,68 @@ http://192.168.1.173:8000/live
 
 ---
 
-## 5. Tải Về & Cài Đặt (Download & Installation)
+## 5. Tải Về & Cài Đặt (Deployment Options)
 
-### Cách 1: Cài đặt trực tiếp file APK
-Tải bản phát hành chính thức **`aceHub.apk`** từ mục [Releases](https://github.com) của repository, sau đó cài đặt qua USB hoặc ADB:
+### Phương Án A: Cài đặt trực tiếp file APK (Android TV Box / Phone)
+Tải bản phát hành chính thức **`aceHub.apk`** từ mục [Releases](https://github.com/hongson117/aceHub/releases) của repository, sau đó cài đặt qua USB hoặc ADB:
 ```bash
 adb connect <IP_ANDROID_BOX>
 adb install -r aceHub.apk
 ```
-
-### Cách 2: Khởi động tự động
 Sau khi cài đặt:
 1. Mở ứng dụng **AceHub** trên màn hình Android TV.
 2. Kiểm tra trạng thái báo `🟢 ĐANG HOẠT ĐỘNG`.
 3. Bấm nút **Ẩn chạy ngầm (Home)** trên remote để trạm tiếp tục phát sóng 24/7 mà không làm phiền màn hình tivi.
 
 ---
+
+### Phương Án B: Triển Khai Docker Trên Home Server & NAS (Ubuntu / Synology / Proxmox / Unraid)
+
+Dành cho người dùng có sẵn **Home Server, Mini PC (Intel N100/i3/i5), NAS hoặc VPS**:
+* **Không giới hạn (Unlimited):** Kéo luồng trực tiếp với VIP Developer Auth 0 (0 quảng cáo, không gián đoạn thời lượng, không nag screen).
+* **Đổi kênh siêu mượt (Instant Channel Switch):** Tự động thu hồi session cũ sạch sẽ khi chuyển kênh, kết hợp bộ đếm đệm 5 giây chống rớt luồng khi TV đổi audio track hoặc seek.
+* **Tải kép thông minh (Multiplexing):** Nhiều TV cùng xem một trận đấu chỉ tốn đúng 1 luồng P2P duy nhất.
+
+#### 1. Chạy nhanh bằng Docker Compose:
+Tạo file `docker-compose.yml`:
+```yaml
+version: '3.8'
+
+services:
+  acehub:
+    image: ghcr.io/hongson117/acehub:latest
+    container_name: acehub
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - ACE_PROXY_PORT=8000
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+```
+Khởi chạy dịch vụ:
+```bash
+docker compose up -d
+```
+
+#### 2. Hoặc chạy nhanh bằng lệnh Docker Run:
+```bash
+docker run -d \
+  --name acehub \
+  --restart unless-stopped \
+  --net=host \
+  ghcr.io/hongson117/acehub:latest
+```
+
+Sau khi chạy xong, máy chủ của bạn ngay lập tức mở cổng `8000`:
+* **Bảng điều khiển (Web Dashboard):** `http://<IP_HOME_SERVER>:8000/`
+* **Xem luồng trực tiếp:** `http://<IP_HOME_SERVER>:8000/live?id=<CONTENT_ID>`
+* **Kiểm tra trạng thái JSON:** `http://<IP_HOME_SERVER>:8000/stat`
+
+---
+
 
 ## 6. Biên Dịch Từ Mã Nguồn (Build from Source)
 

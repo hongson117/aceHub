@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  acehub:
+    image: ghcr.io/hongson117/acehub:latest
+    container_name: acehub
+    restart: unless-stopped
+    # host mode enables direct P2P socket performance and instant broadcast in local LAN
+    network_mode: host
+    environment:
+      - ACE_PROXY_PORT=8000
+      - ACE_TELNET_PORT=62062
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
