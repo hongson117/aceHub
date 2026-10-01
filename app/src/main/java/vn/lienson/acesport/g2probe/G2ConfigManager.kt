@@ -20,9 +20,13 @@ class G2ConfigManager(context: Context) {
         private const val KEY_ACCESS_TOKEN = "engine_access_token"
         const val DEFAULT_ACCESS_TOKEN = "YA0WKoM9ov"
 
-        // Default: 100% Clean Core - No hardcoded channels or streams!
+        // Default: 100% Clean Core - No commercial pay-TV channels or streams!
         const val DEFAULT_CHANNEL_ID = ""
         const val DEFAULT_SOURCE_TYPE = "infohash"
+
+        // Open Diagnostic Test Stream (Creative Commons CC-BY 3.0 - Big Buck Bunny 1080p open benchmark)
+        // Used strictly for out-of-the-box signal & throughput diagnostics on Android TV remote
+        const val OPEN_DIAGNOSTIC_INFOHASH = "dd8255ecdc7ca55fb0bbf81323d87062db1f6d1c"
 
         // Legacy test hash to sanitize if upgraded from older versions
         private const val LEGACY_TEST_HASH = "73d24aeff6515abb236ea8a3e77d89fe0b04b665"

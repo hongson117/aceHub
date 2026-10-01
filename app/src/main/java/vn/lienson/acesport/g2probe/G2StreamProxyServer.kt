@@ -129,6 +129,71 @@ class G2StreamProxyServer(
         }
     }
 
+    data class ProbeResult(
+        val success: Boolean,
+        val bytesRead: Long,
+        val speedKbps: Long,
+        val peers: Int,
+        val playbackUrl: String?,
+        val message: String
+    )
+
+    suspend fun probeStreamSignal(
+        channelId: String,
+        sourceType: String,
+        timeoutMs: Long = 10000L
+    ): ProbeResult = withContext(Dispatchers.IO) {
+        AppLogger.i("PROBE", "🔍 Đang kiểm tra tín hiệu tải về cho: ${channelId.take(12)}... ($sourceType)")
+
+        val stream = getOrCreateStream(channelId, sourceType, persistent = false)
+        if (stream == null || stream.playbackUrl.isEmpty()) {
+            AppLogger.e("PROBE", "🔴 Engine không phản hồi hoặc từ chối tạo luồng.")
+            return@withContext ProbeResult(false, 0, 0, 0, null, "Engine không phản hồi hoặc từ chối tạo luồng")
+        }
+
+        var totalBytes = 0L
+        var conn: HttpURLConnection? = null
+        val startTime = System.currentTimeMillis()
+
+        try {
+            AppLogger.i("PROBE", "📡 Mở kết nối đọc dữ liệu stream từ Engine: ${stream.playbackUrl}")
+            val url = URL(stream.playbackUrl)
+            conn = url.openConnection() as HttpURLConnection
+            conn.connectTimeout = 6000
+            conn.readTimeout = 6000
+            val inStream = conn.inputStream
+            val buffer = ByteArray(16384)
+
+            // Đọc thử dòng byte dữ liệu trong khoảng thời gian timeoutMs hoặc đến khi nhận đủ >= 64KB
+            while (isActive && (System.currentTimeMillis() - startTime) < timeoutMs && totalBytes < 65536L) {
+                val n = inStream.read(buffer)
+                if (n > 0) {
+                    totalBytes += n
+                } else if (n == -1) {
+                    break
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Probe read error: ${e.message}")
+        } finally {
+            conn?.disconnect()
+        }
+
+        val elapsedSec = maxOf(1L, (System.currentTimeMillis() - startTime) / 1000L)
+        val speedKbps = if (totalBytes > 0) (totalBytes * 8 / 1024) / elapsedSec else stream.speedKbps
+        val peers = stream.peers
+
+        if (totalBytes > 0) {
+            val msg = "Đã nhận ${(totalBytes / 1024)} KB dữ liệu ($peers peers, ~$speedKbps Kbps)"
+            AppLogger.s("PROBE", "🟢 Thu được tín hiệu tải về thành công! $msg")
+            ProbeResult(true, totalBytes, speedKbps, peers, stream.playbackUrl, msg)
+        } else {
+            val msg = "Chưa có byte dữ liệu tải về sau ${timeoutMs / 1000}s (Peers: $peers)"
+            AppLogger.w("PROBE", "⚠️ $msg")
+            ProbeResult(false, 0, 0, peers, stream.playbackUrl, msg)
+        }
+    }
+
     private fun startDummyReader(stream: ActiveStream) {
         stream.dummyReaderJob?.cancel()
         stream.dummyReaderJob = scope.launch(Dispatchers.IO) {
@@ -234,6 +299,20 @@ class G2StreamProxyServer(
                 return@withContext
             }
 
+            // 2b. Live Downlink Signal Probe API
+            if (rawUri.startsWith("/probe")) {
+                val queryParams = parseQueryParams(rawUri)
+                val chId = queryParams["id"] ?: queryParams["infohash"] ?: queryParams["content_id"] ?: configManager?.defaultChannelId ?: G2ConfigManager.OPEN_DIAGNOSTIC_INFOHASH
+                val sType = queryParams["type"] ?: if (queryParams.containsKey("infohash") || chId.length == 40) "infohash" else "content_id"
+                val timeout = queryParams["timeout"]?.toLongOrNull() ?: 8000L
+
+                val result = probeStreamSignal(chId, sType, timeout)
+                val resp = """{"success":${result.success},"channel":"$chId","bytes_read":${result.bytesRead},"speed_kbps":${result.speedKbps},"peers":${result.peers},"message":"${result.message}"}"""
+                sendHttpResponse(out, "application/json", resp.toByteArray(Charsets.UTF_8))
+                clientSock.close()
+                return@withContext
+            }
+
             // 3. Prewarm Trigger API
             if (rawUri.startsWith("/prewarm")) {
                 val queryParams = parseQueryParams(rawUri)
@@ -335,9 +414,9 @@ class G2StreamProxyServer(
                     sourceType = configManager?.defaultSourceType ?: "infohash"
                     Log.i(TAG, "Request without explicit channel, serving preserved stream: $channelId")
                 } else {
-                    sendHttpError(out, 400, "Missing id or infohash parameter")
-                    clientSock.close()
-                    return@withContext
+                    channelId = G2ConfigManager.OPEN_DIAGNOSTIC_INFOHASH
+                    sourceType = "infohash"
+                    Log.i(TAG, "Request without explicit channel and no default set, serving Open Diagnostic Stream: $channelId")
                 }
             }
 

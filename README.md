@@ -208,6 +208,10 @@ Dự án này được xây dựng với mục tiêu tuân thủ 100% tiêu chu�
 * **`libacepython.so`:** Trình chạy JNI nhúng mã nguồn mở cho Python trên Android, tuân theo giấy phép Python Software Foundation License / Apache 2.0.
 * **Android Compatibility Shims (`main_android.py`):** Cung cấp các cấu trúc tương thích chuẩn với cơ chế bảo mật SELinux của Android (như `/proc/cpuinfo` và `/proc/meminfo` giả lập cho sandbox không có quyền root) để Python tiêu chuẩn có thể khởi động bình thường. Hoàn toàn không can thiệp DRM, không can thiệp cơ chế kiểm tra bản quyền và không thay đổi logic cấp phép của Engine.
 
+### 7.2 Thăm Dò Tín Hiệu Trực Tiếp & Luồng Chẩn Đoán Chuẩn Mở (Live Downlink Probe)
+* **Thăm dò luồng thực tế (Real Bytes Read):** Nút kiểm tra tín hiệu trên TV Remote không chỉ bắt tay API lý thuyết mà mở trực tiếp kết nối HTTP tới Engine, đọc dòng byte video (`bytesRead >= 64KB`) và đo lường tốc độ tức thời (`speedKbps`) nhằm xác nhận luồng đang tải về thành công trước khi lưu cấu hình.
+* **Luồng chẩn đoán chuẩn mở (Open Diagnostic Stream CC-BY 3.0):** Để tối ưu trải nghiệm người dùng trên Android TV D-Pad remote mà không yêu cầu gõ thủ công 40 ký tự hex, khi ô nhập để trống trên thiết bị mới cài đặt, hệ thống tự động sử dụng luồng chẩn đoán mở chuẩn quốc tế (*Big Buck Bunny 1080p*, Blender Foundation, Creative Commons CC-BY 3.0) để đo lường băng thông mạng, tuyệt đối không nhúng hay liên kết với bất kỳ đài truyền hình thương mại nào.
+
 ---
 
 ## 8. Giấy Phép (License)

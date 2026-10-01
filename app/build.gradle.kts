@@ -11,8 +11,8 @@ android {
         applicationId = "vn.lienson.acesport.g2probe"
         minSdk = 24
         targetSdk = 34
-        versionCode = 4
-        versionName = "1.0.3"
+        versionCode = 5
+        versionName = "1.0.4"
 
         ndk {
             abiFilters.addAll(listOf("armeabi-v7a"))

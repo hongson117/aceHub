@@ -176,7 +176,7 @@ class MainActivity : AppCompatActivity() {
             updateModeButtons(config)
         }
 
-        // Kiểm tra tín hiệu luồng theo Infohash / Content ID do người dùng nhập
+        // Kiểm tra tín hiệu luồng thực tế (Downlink Data Probe) & Chẩn đoán tải dữ liệu
         binding.btnTestStream.setOnClickListener {
             val service = G2OrchestratorService.instance
             if (service == null || !config.isHubEnabled) {
@@ -185,30 +185,38 @@ class MainActivity : AppCompatActivity() {
             }
 
             val inputHash = binding.etTestInfohash.text?.toString()?.trim() ?: ""
-            val targetHash = if (inputHash.isNotEmpty()) inputHash else config.defaultChannelId
-
-            if (targetHash.isEmpty()) {
-                Toast.makeText(this, "Vui lòng nhập Infohash/Content ID hoặc gửi luồng từ thiết bị khác!", Toast.LENGTH_LONG).show()
-                AppLogger.w("TEST", "Chưa nhập mã luồng. Trạm sẵn sàng nhận luồng từ thiết bị trong mạng LAN.")
-                return@setOnClickListener
+            val isCustomInput = inputHash.isNotEmpty()
+            val targetHash = when {
+                isCustomInput -> inputHash
+                config.defaultChannelId.isNotEmpty() -> config.defaultChannelId
+                else -> G2ConfigManager.OPEN_DIAGNOSTIC_INFOHASH
             }
 
-            val testLabel = "Infohash ${targetHash.take(12)}..."
-            Toast.makeText(this, "Đang kiểm tra tín hiệu $testLabel...", Toast.LENGTH_SHORT).show()
-            binding.tvActiveChannel.text = "Đang kiểm tra tín hiệu..."
-            AppLogger.i("TEST", "👉 Đang kết nối kiểm tra tín hiệu luồng: $targetHash")
+            val isDiagnostic = (targetHash == G2ConfigManager.OPEN_DIAGNOSTIC_INFOHASH)
+            val testLabel = if (isDiagnostic) "Luồng chẩn đoán mở (CC-BY 3.0)" else "Kênh ${targetHash.take(12)}..."
+
+            Toast.makeText(this, "Đang kiểm tra & tải thử dữ liệu $testLabel...", Toast.LENGTH_SHORT).show()
+            binding.tvActiveChannel.text = "Đang thăm dò tải dữ liệu: $testLabel..."
+            AppLogger.i("TEST", "👉 Bắt đầu kiểm tra luồng và thăm dò dữ liệu tải về: $targetHash")
 
             scope.launch(Dispatchers.IO) {
-                val ok = service.proxyServer?.prewarmStream(targetHash, "infohash", persistent = true) ?: false
+                val result = service.proxyServer?.probeStreamSignal(targetHash, "infohash", timeoutMs = 8000L)
                 launch(Dispatchers.Main) {
-                    if (ok) {
-                        config.defaultChannelId = targetHash
-                        config.isAlwaysHotStream = true
-                        Toast.makeText(this@MainActivity, "🟢 Đã thu được tín hiệu luồng thành công!", Toast.LENGTH_SHORT).show()
-                        AppLogger.s("TEST", "🟢 Tín hiệu luồng trả về hợp lệ! Đã lưu cấu hình phát.")
+                    if (result != null && result.success) {
+                        if (isCustomInput) {
+                            config.defaultChannelId = targetHash
+                            config.isAlwaysHotStream = true
+                        }
+                        binding.tvActiveChannel.text = "${targetHash.take(12)}... (~${result.speedKbps} Kbps)"
+                        binding.tvBitrate.text = "${result.speedKbps} KB/s (~${String.format(java.util.Locale.US, "%.1f", result.speedKbps * 8 / 1024.0)} Mbps)"
+                        binding.tvPeers.text = "${result.peers} Peers"
+                        Toast.makeText(this@MainActivity, "🟢 Đã nhận ${result.bytesRead / 1024} KB dữ liệu! Tốc độ: ~${result.speedKbps} Kbps", Toast.LENGTH_LONG).show()
+                        AppLogger.s("TEST", "🟢 Tín hiệu tải về thành công! ${result.message}")
                     } else {
-                        Toast.makeText(this@MainActivity, "🔴 Chưa thu được tín hiệu từ nguồn phát / Engine từ chối", Toast.LENGTH_LONG).show()
-                        AppLogger.e("TEST", "🔴 Không có tín hiệu trả về từ nguồn phát cho mã: $targetHash")
+                        val errMsg = result?.message ?: "Engine không phản hồi"
+                        binding.tvActiveChannel.text = "Tín hiệu thất bại / 0 byte"
+                        Toast.makeText(this@MainActivity, "🔴 $errMsg", Toast.LENGTH_LONG).show()
+                        AppLogger.e("TEST", "🔴 Không có dữ liệu tải về: $errMsg")
                     }
                 }
             }
