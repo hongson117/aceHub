@@ -42,60 +42,70 @@ class EmbeddedAceRuntime(private val context: Context) {
 
     @Synchronized
     @Throws(IOException::class)
-    fun prepare() {
+    fun prepare(progressListener: AceEngineDownloader.DownloadListener? = null) {
         val root = rootDir()
         val marker = File(root, ".prepared-ace-$abi-v5")
-        if (!marker.exists()) {
-            AppLogger.i("ENGINE", "Chuẩn bị môi trường AceStream Linux ($abi)...")
-            deleteRecursively(root)
-            if (!root.mkdirs() && !root.isDirectory) {
-                AppLogger.e("ENGINE", "Không thể tạo thư mục: ${root.absolutePath}")
-                throw IOException("Cannot create $root")
-            }
+        val engineBin = File(root, "acestreamengine")
+        val coreSo = File(root, "Core.so")
 
-            // Check if zip exists in assets; otherwise download directly from official source
-            val assetZipPath = "aceserve/$abi/${zipName()}"
-            val tempZip = File(appContext.cacheDir, zipName())
-            var unpacked = false
-            try {
-                AppLogger.i("ENGINE", "Đang nạp bộ cài nhúng: $assetZipPath...")
-                AssetCopier.copyFile(appContext, assetZipPath, tempZip)
-                AppLogger.i("ENGINE", "Đang giải nén bộ cài Engine (dung lượng ~${tempZip.length() / (1024 * 1024)} MB)...")
-                unzip(tempZip, root)
-                tempZip.delete()
-                unpacked = true
-                AppLogger.s("ENGINE", "Giải nén bộ cài Engine thành công!")
-            } catch (e: Exception) {
-                AppLogger.w("ENGINE", "Không tìm thấy bộ cài nhúng trong assets (${e.message}). Thử tải từ máy chủ chính thức...")
-            }
-
-            if (!unpacked) {
-                try {
-                    AppLogger.i("ENGINE", "Bắt đầu tải Engine chính thức từ máy chủ AceStream...")
-                    val downloaded = AceEngineDownloader.downloadOfficialEngine(appContext)
-                    AppLogger.i("ENGINE", "Đang giải nén tệp tải về: ${downloaded.name}...")
-                    AceEngineDownloader.unpackEngine(downloaded, root)
-                    downloaded.delete()
-                    unpacked = true
-                    AppLogger.s("ENGINE", "Tải và giải nén Engine chính thức thành công!")
-                } catch (e: Exception) {
-                    AppLogger.e("ENGINE", "Lỗi tải Engine: ${e.message}", e)
-                    throw IOException("Could not prepare engine: ${e.message}", e)
-                }
-            }
-
-            if (unpacked) {
-                marker.createNewFile()
-                AppLogger.s("ENGINE", "Runtime Engine Linux đã sẵn sàng tại: ${root.absolutePath}")
-            }
-        } else {
-            AppLogger.s("ENGINE", "Runtime Engine Linux đã có sẵn trong bộ nhớ.")
+        // 1. Fast check: If already installed and intact (e.g. upgraded from v1.0.1 or previous run), reuse immediately!
+        if (marker.exists() && (engineBin.exists() || coreSo.exists())) {
+            AppLogger.s("ENGINE", "Runtime Engine Linux sạch đã có sẵn trong máy (Khởi động tức thì).")
+            updateMainScript(root)
+            return
         }
 
-        // Always copy main_android.py
+        AppLogger.i("ENGINE", "Chuẩn bị môi trường AceStream Linux sạch ($abi)...")
+        deleteRecursively(root)
+        if (!root.mkdirs() && !root.isDirectory) {
+            AppLogger.e("ENGINE", "Không thể tạo thư mục: ${root.absolutePath}")
+            throw IOException("Cannot create $root")
+        }
+
+        // 2. Check if zip exists in assets (for custom offline builds)
+        val assetZipPath = "aceserve/$abi/${zipName()}"
+        val tempZip = File(appContext.cacheDir, zipName())
+        var unpacked = false
+        try {
+            AppLogger.i("ENGINE", "Kiểm tra gói cài đặt nhúng sẵn...")
+            AssetCopier.copyFile(appContext, assetZipPath, tempZip)
+            AppLogger.i("ENGINE", "Đang giải nén bộ cài Engine từ assets (~${tempZip.length() / (1024 * 1024)} MB)...")
+            unzip(tempZip, root)
+            tempZip.delete()
+            unpacked = true
+            AppLogger.s("ENGINE", "Giải nén bộ cài Engine thành công!")
+        } catch (_: Exception) {
+            // Expected for Clean Core APK: assets does not bundle the 42MB binary
+        }
+
+        // 3. Clean Core Path: Download the official Headless Linux ARM Engine package
+        if (!unpacked) {
+            try {
+                AppLogger.i("ENGINE", "Bắt đầu tải Engine Linux sạch (0 quảng cáo) từ máy chủ phát hành...")
+                val downloaded = AceEngineDownloader.downloadEngineWithFallbacks(appContext, progressListener)
+                AppLogger.i("ENGINE", "Đang giải nén Engine Linux vào bộ nhớ thiết bị...")
+                AceEngineDownloader.unpackEngine(downloaded, root)
+                downloaded.delete()
+                unpacked = true
+                AppLogger.s("ENGINE", "Tải và giải nén Engine Linux sạch thành công!")
+            } catch (e: Exception) {
+                AppLogger.e("ENGINE", "Lỗi nạp Engine Linux: ${e.message}", e)
+                throw IOException("Could not prepare engine: ${e.message}", e)
+            }
+        }
+
+        if (unpacked) {
+            marker.createNewFile()
+            AppLogger.s("ENGINE", "Runtime Engine Linux sạch đã sẵn sàng tại: ${root.absolutePath}")
+        }
+
+        updateMainScript(root)
+    }
+
+    private fun updateMainScript(root: File) {
         try {
             AssetCopier.copyFile(appContext, "aceserve/main_android.py", File(root, "main_android.py"))
-            AppLogger.d("ENGINE", "Đã cập nhật main_android.py")
+            AppLogger.d("ENGINE", "Đã cập nhật script điều phối main_android.py")
         } catch (e: Exception) {
             AppLogger.w("ENGINE", "Không thể chép main_android.py: ${e.message}")
         }

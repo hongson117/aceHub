@@ -143,9 +143,42 @@ class AceEngineManager(private val context: Context, private val listener: Engin
                 try {
                     val runtime = EmbeddedAceRuntime(context)
                     embeddedRuntime = runtime
-                    mainHandler.post { listener.onEngineStateChanged("PREPARING", "Extracting embedded AceStream Linux Engine...") }
-                    runtime.prepare()
-                    mainHandler.post { listener.onEngineStateChanged("STARTING", "Launching embedded AceStream Linux Engine...") }
+                    mainHandler.post { listener.onEngineStateChanged("PREPARING", "Đang chuẩn bị môi trường Engine Linux...") }
+
+                    val downloadListener = object : vn.lienson.acesport.g2probe.engine.AceEngineDownloader.DownloadListener {
+                        var lastLogTime = 0L
+
+                        override fun onDownloadProgress(percent: Int, downloadedBytes: Long, totalBytes: Long, speedKbps: Long) {
+                            val now = System.currentTimeMillis()
+                            val dlMb = String.format(java.util.Locale.US, "%.1f", downloadedBytes / (1024.0 * 1024.0))
+                            val totMb = String.format(java.util.Locale.US, "%.1f", totalBytes / (1024.0 * 1024.0))
+                            val speedText = if (speedKbps > 1024) "${String.format(java.util.Locale.US, "%.1f", speedKbps / 1024.0)} MB/s" else "$speedKbps KB/s"
+                            val statusMsg = "Đang tải Engine Linux sạch: $percent% ($dlMb / $totMb MB, $speedText)"
+
+                            mainHandler.post {
+                                listener.onEngineStateChanged("DOWNLOADING", statusMsg)
+                            }
+                            if (now - lastLogTime > 2000 || percent == 100) {
+                                lastLogTime = now
+                                AppLogger.i("DOWNLOAD", statusMsg)
+                            }
+                        }
+
+                        override fun onDownloadComplete(outputFile: java.io.File) {
+                            mainHandler.post {
+                                listener.onEngineStateChanged("UNPACKING", "Đang giải nén Engine Linux sạch...")
+                            }
+                        }
+
+                        override fun onDownloadError(error: String) {
+                            mainHandler.post {
+                                listener.onEngineError("Lỗi tải Engine: $error")
+                            }
+                        }
+                    }
+
+                    runtime.prepare(downloadListener)
+                    mainHandler.post { listener.onEngineStateChanged("STARTING", "Đang khởi chạy Engine Linux sạch...") }
                     runtime.start()
                     AppLogger.i("ENGINE_MGR", "Đang đợi Engine mở cổng 62062 / 6878...")
                     for (i in 1..40) {

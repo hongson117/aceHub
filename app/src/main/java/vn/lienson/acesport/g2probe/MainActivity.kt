@@ -307,6 +307,48 @@ class MainActivity : AppCompatActivity() {
         binding.tvHubStatusBadge.text = "🟢 $status".uppercase()
     }
 
+    fun updateEngineSetupStatus(state: String, details: String) {
+        runOnUiThread {
+            when (state) {
+                "DOWNLOADING" -> {
+                    binding.tvEngineStatus.text = details
+                    binding.tvEngineStatus.setTextColor(0xFF38BDF8.toInt())
+                    binding.tvHubStatusBadge.text = "⏳ ĐANG TẢI ENGINE"
+                    binding.tvHubStatusBadge.setBackgroundColor(0xFF0369A1.toInt())
+                    binding.tvHubStatusBadge.setTextColor(0xFFE0F2FE.toInt())
+                }
+                "UNPACKING" -> {
+                    binding.tvEngineStatus.text = "Đang giải nén Engine Linux sạch..."
+                    binding.tvEngineStatus.setTextColor(0xFFFBBF24.toInt())
+                    binding.tvHubStatusBadge.text = "📦 ĐANG GIẢI NÉN"
+                    binding.tvHubStatusBadge.setBackgroundColor(0xFFD97706.toInt())
+                    binding.tvHubStatusBadge.setTextColor(0xFFFEF3C7.toInt())
+                }
+                "PREPARING", "STARTING" -> {
+                    binding.tvEngineStatus.text = details
+                    binding.tvEngineStatus.setTextColor(0xFFFCD34D.toInt())
+                    binding.tvHubStatusBadge.text = "⚙️ ĐANG KHỞI CHẠY"
+                    binding.tvHubStatusBadge.setBackgroundColor(0xFF854D0E.toInt())
+                    binding.tvHubStatusBadge.setTextColor(0xFFFEF9C3.toInt())
+                }
+                "READY" -> {
+                    binding.tvEngineStatus.text = "Sẵn sàng (Port 6878/62062)"
+                    binding.tvEngineStatus.setTextColor(0xFF4ADE80.toInt())
+                    binding.tvHubStatusBadge.text = "🟢 ĐANG HOẠT ĐỘNG"
+                    binding.tvHubStatusBadge.setBackgroundColor(0xFF166534.toInt())
+                    binding.tvHubStatusBadge.setTextColor(0xFF4ADE80.toInt())
+                }
+                "ERROR" -> {
+                    binding.tvEngineStatus.text = details
+                    binding.tvEngineStatus.setTextColor(0xFFEF4444.toInt())
+                    binding.tvHubStatusBadge.text = "🔴 LỖI ENGINE"
+                    binding.tvHubStatusBadge.setBackgroundColor(0xFF7F1D1D.toInt())
+                    binding.tvHubStatusBadge.setTextColor(0xFFFCA5A5.toInt())
+                }
+            }
+        }
+    }
+
     private fun updateDashboardMetrics() {
         val service = G2OrchestratorService.instance
         val config = service?.configManager ?: G2ConfigManager(this)
@@ -320,8 +362,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (config.isHubEnabled && service != null && service.proxyServer != null) {
-            binding.tvEngineStatus.text = "Sẵn sàng (Port 6878/62062)"
-            binding.tvEngineStatus.setTextColor(0xFF4ADE80.toInt())
+            if (service.engineManager.isEngineReady) {
+                binding.tvEngineStatus.text = "Sẵn sàng (Port 6878/62062)"
+                binding.tvEngineStatus.setTextColor(0xFF4ADE80.toInt())
+                binding.tvHubStatusBadge.text = "🟢 ĐANG HOẠT ĐỘNG"
+                binding.tvHubStatusBadge.setBackgroundColor(0xFF166534.toInt())
+                binding.tvHubStatusBadge.setTextColor(0xFF4ADE80.toInt())
+            }
 
             val activeStream = service.proxyServer?.latestActiveStream
             if (activeStream != null && (activeStream.clientCount > 0 || activeStream.speedKbps > 0)) {

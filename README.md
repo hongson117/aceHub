@@ -107,10 +107,17 @@ Tải bản phát hành chính thức **`aceHub.apk`** từ mục [Releases](htt
 adb connect <IP_ANDROID_BOX>
 adb install -r aceHub.apk
 ```
+
+> **Đặc quyền kiến trúc Clean Core 100% (Từ phiên bản v1.0.2):**
+> * **Bản cài siêu nhẹ (~5.5 MB):** 100% mã nguồn mở (MIT), tuân thủ tuyệt đối quy định phân phối của GitHub.
+> * **Tự động chuẩn bị Engine Linux Headless:** Khi khởi chạy lần đầu trên máy mới, ứng dụng tự động tải gói Engine Linux ARM nguyên bản (`ace-engine-armv7.zip`) từ Release Asset chính thức (có máy chủ dự phòng CDN châu Á). Tiến trình tải và giải nén được hiển thị trực quan theo thời gian thực trên TV.
+> * **100% Không Quảng Cáo (Zero Ads):** Bản Engine Linux là daemon điều phối ngầm (Console Daemon), hoàn toàn không chứa Android GUI hay AdMob SDK như bản app thông thường.
+> * **Bảo lưu và khởi động tức thì:** Nếu thiết bị đã có sẵn Engine (hoặc nâng cấp từ bản trước), AceHub tái sử dụng ngay lập tức mà không cần tải lại, mở cổng phát sóng chỉ sau 0.5 giây.
+
 Sau khi cài đặt:
 1. Mở ứng dụng **AceHub** trên màn hình Android TV.
-2. Kiểm tra trạng thái báo `🟢 ĐANG HOẠT ĐỘNG`.
-3. Bấm nút **Ẩn chạy ngầm (Home)** trên remote để trạm tiếp tục phát sóng 24/7 mà không làm phiền màn hình tivi.
+2. Thiết bị sẽ tự động chuẩn bị Engine (lần đầu mất ~10 giây tải qua mạng; các lần sau bật lên là chạy ngay).
+3. Khi màn hình báo `🟢 ĐANG HOẠT ĐỘNG`, bấm nút **Ẩn chạy ngầm (Home)** trên remote để trạm tiếp tục phát sóng 24/7 mà không làm phiền màn hình tivi.
 
 ---
 

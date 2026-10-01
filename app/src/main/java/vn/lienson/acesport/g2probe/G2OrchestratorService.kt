@@ -239,7 +239,8 @@ class G2OrchestratorService : Service(), AceEngineManager.EngineListener {
 
     override fun onEngineStateChanged(state: String, details: String) {
         AppLogger.i("ENGINE", "Trạng thái Engine: $state ($details)")
-        updateNotification("Engine: $state ($details)")
+        updateNotification("Engine: $details")
+        MainActivity.instance?.updateEngineSetupStatus(state, details)
     }
 
     override fun onEngineReady(httpPort: Int, enginePort: Int, packageName: String, version: String) {
@@ -255,6 +256,7 @@ class G2OrchestratorService : Service(), AceEngineManager.EngineListener {
         Log.i(TAG, banner)
         AppLogger.s("SYSTEM", "Kết nối Engine thành công: http://$lanIp:${configManager.proxyPort}")
         MainActivity.instance?.showEngineStatus(lanIp, configManager.proxyPort, "Thành công")
+        MainActivity.instance?.updateEngineSetupStatus("READY", "Sẵn sàng (Port $httpPort/$enginePort)")
 
         // Tự động khôi phục và giữ nguyên luồng cũ sau khi khởi động / restart (Headless 24/7)
         val savedChannel = configManager.defaultChannelId
@@ -276,6 +278,7 @@ class G2OrchestratorService : Service(), AceEngineManager.EngineListener {
     override fun onEngineError(error: String) {
         AppLogger.e("ENGINE", "Lỗi Engine: $error")
         updateNotification("Engine Error: $error")
+        MainActivity.instance?.updateEngineSetupStatus("ERROR", error)
     }
 
     private fun getLanIpAddress(): String {

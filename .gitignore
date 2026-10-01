@@ -56,3 +56,9 @@ captures/
 # OS specific files
 .DS_Store
 Thumbs.db
+
+# Engine Runtime Archives (hosted as GitHub release assets, not in git tree)
+*.zip
+*.tar.gz
+*.download
+
