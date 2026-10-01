@@ -159,6 +159,7 @@ class G2OrchestratorService : Service(), AceEngineManager.EngineListener {
         }
 
         startWatchdogLoop()
+        wakeUpTailscaleIfInstalled()
         updateNotification("AceStream Hub Đang Hoạt Động (Port ${configManager.proxyPort})")
         AppLogger.s("SYSTEM", "🟢 TRẠM PHÁT ĐANG HOẠT ĐỘNG (24/7 Mode: ${if (configManager.isAlwaysOn247) "BẬT" else "TẮT"})")
     }
@@ -253,6 +254,38 @@ class G2OrchestratorService : Service(), AceEngineManager.EngineListener {
             }
         } catch (_: Exception) {
             false
+        }
+    }
+
+    private fun wakeUpTailscaleIfInstalled() {
+        if (!configManager.isAutoWakeTailscale) return
+        scope.launch(Dispatchers.IO) {
+            try {
+                // Đợi 8 giây cho hệ thống mạng LAN và Wi-Fi sẵn sàng
+                delay(8000)
+                val pm = packageManager
+                val tailscalePkg = "com.tailscale.ipn"
+                val launchIntent = pm.getLaunchIntentForPackage(tailscalePkg)
+                if (launchIntent != null) {
+                    AppLogger.i("TAILSCALE", "🚀 Phát hiện Tailscale! Đang tự động đánh thức dịch vụ VPN...")
+                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
+                    startActivity(launchIntent)
+                    AppLogger.s("TAILSCALE", "🟢 Đã đánh thức Tailscale tự động kết nối ngầm cùng AceHub")
+
+                    // Sau 3 giây, tự động trả màn hình về Home để không che màn hình TV
+                    delay(3000)
+                    val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+                        addCategory(Intent.CATEGORY_HOME)
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    startActivity(homeIntent)
+                } else {
+                    Log.d(TAG, "Tailscale package not installed, skip auto-wake.")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Không thể tự khởi động Tailscale: ${e.message}")
+            }
         }
     }
 

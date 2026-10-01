@@ -2,7 +2,7 @@
 
 > **Trạm phát luồng AceStream nội bộ (Headless LAN Stream Gateway) siêu nhẹ cho Android TV Box & Mạng gia đình**
 
-[![Release: v1.0.6](https://img.shields.io/badge/Release-v1.0.6-blue.svg)](https://github.com/hongson117/aceHub/releases/tag/v1.0.6)
+[![Release: v1.0.7](https://img.shields.io/badge/Release-v1.0.7-blue.svg)](https://github.com/hongson117/aceHub/releases/tag/v1.0.7)
 [![Platform: Android TV](https://img.shields.io/badge/Platform-Android%20TV%20%7C%20Google%20TV-green.svg)](https://developer.android.com)
 [![Stream Port: 8000](https://img.shields.io/badge/Stream%20Port-8000-orange.svg)]()
 [![Pass-Through: 0 Transcode](https://img.shields.io/badge/Pass--Through-0%20Transcode-success.svg)]()
@@ -41,7 +41,7 @@ Hãy tưởng tượng **AceHub** giống như một **"trạm tiếp sóng"** �
 
 Quy trình nhanh nhất để phát và xem luồng từ đầu đến cuối:
 
-* **Bước 1:** Tải file **`aceHub.apk`** từ [Releases](https://github.com/hongson117/aceHub/releases/tag/v1.0.6) và cài đặt lên Android TV Box của bạn.
+* **Bước 1:** Tải file **`aceHub.apk`** từ [Releases](https://github.com/hongson117/aceHub/releases/tag/v1.0.7) và cài đặt lên Android TV Box của bạn.
 * **Bước 2:** Mở ứng dụng **AceHub** trên màn hình TV Box.
 * **Bước 3:** Chờ khoảng 10–20 giây cho đến khi màn hình hiển thị:
   * Huy hiệu trạng thái: **`🟢 ĐANG HOẠT ĐỘNG`**

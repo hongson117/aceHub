@@ -18,6 +18,7 @@ class G2ConfigManager(context: Context) {
         private const val KEY_PROXY_PORT = "proxy_port"
         private const val KEY_GRACE_PERIOD_MS = "grace_period_ms"
         private const val KEY_ACCESS_TOKEN = "engine_access_token"
+        private const val KEY_AUTO_WAKE_TAILSCALE = "auto_wake_tailscale"
         const val DEFAULT_ACCESS_TOKEN = "YA0WKoM9ov"
 
         // Default: 100% Clean Core - No commercial pay-TV channels or streams!
@@ -58,6 +59,10 @@ class G2ConfigManager(context: Context) {
     var isHubEnabled: Boolean
         get() = prefs.getBoolean(KEY_HUB_ENABLED, true)
         set(value) = prefs.edit().putBoolean(KEY_HUB_ENABLED, value).apply()
+
+    var isAutoWakeTailscale: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_WAKE_TAILSCALE, true)
+        set(value) = prefs.edit().putBoolean(KEY_AUTO_WAKE_TAILSCALE, value).apply()
 
     // Default FALSE on clean install: idle until user explicitly configures a stream
     var isAlwaysHotStream: Boolean
