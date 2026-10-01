@@ -21,7 +21,7 @@
 **AceHub** là giải pháp trạm phát trực tiếp mã nguồn mở (Headless Stream Hub & Universal Proxy), biến các thiết bị Android TV Box phổ thông (đặc biệt là các dòng Box chỉ có **2GB RAM** như **FPT Play Box**, Mi Box, Tanix, RockTek G2...) thành một **Trạm chủ phát luồng AceStream 24/7** mạnh mẽ cho toàn bộ mạng nội bộ (LAN).
 
 ### Điểm Vượt Trội Của Kiến Trúc "Hub Only":
-* **0 Video Decoding (Giải Phóng 100% GPU/RAM):** Hoàn toàn lược bỏ trình phát video (ExoPlayer/WebView) khỏi Box chạy Hub. Box đóng vai trò thuần túy là Proxy nạp và cấp luồng, giữ mức chiếm RAM dưới **150MB** và CPU chỉ **2% – 5%**, giúp thiết bị chạy mát lạnh 24/7 không bao giờ quá nhiệt.
+* **0 Video Decoding (Giải Phóng 100% GPU/RAM):** Hoàn toàn lược bỏ trình phát video (ExoPlayer/WebView) khỏi Box chạy Hub. Box đóng vai trò thuần túy là Proxy nạp và cấp luồng, giữ mức chiếm RAM dưới **150MB** và CPU chỉ **2% – 5%**, giúp thiết bị hoạt động mát mẻ, ổn định liên tục.
 * **0 Transcode & 0 Redirects (Pass-Through Nguyên Bản):** Luồng video và âm thanh từ mạng P2P BitTorrent được truyền thẳng (Direct Pass-Through) tới các thiết bị đầu cuối với **độ trễ phản hồi ban đầu (TTFB) siêu tốc dưới 50ms**.
 * **Đồng Bộ Chuẩn Cổng 8000 Duy Nhất:** Thống nhất cổng phát sóng `8000` trên toàn bộ hệ thống (Samsung Smart TV, Apple TV, Android TV, VLC).
 * **Bảo Lưu Trạng Thái Khi Khởi Động Lại (Reboot Persistence):** Tự động ghi nhớ kênh vừa xem và luồng phát mặc định vào bộ nhớ. Mỗi khi máy Box hoặc hệ thống khởi động lại, dịch vụ nền tự động khởi động và bơm sẵn luồng cũ mà không làm thay đổi đường dẫn phát.
@@ -117,7 +117,7 @@ Sau khi cài đặt:
 ### Phương Án B: Triển Khai Docker Trên Home Server & NAS (Ubuntu / Synology / Proxmox / Unraid)
 
 Dành cho người dùng có sẵn **Home Server, Mini PC (Intel N100/i3/i5), NAS hoặc VPS**:
-* **Không giới hạn (Unlimited):** Kéo luồng trực tiếp với VIP Developer Auth 0 (0 quảng cáo, không gián đoạn thời lượng, không nag screen).
+* **Tích Hợp API Chuẩn (Standard API Engine):** Giao tiếp trực tiếp với AceStream Engine qua cổng API nội bộ để khởi tạo và truyền dẫn luồng HTTP nguyên bản (0-transcode).
 * **Đổi kênh siêu mượt (Instant Channel Switch):** Tự động thu hồi session cũ sạch sẽ khi chuyển kênh, kết hợp bộ đếm đệm 5 giây chống rớt luồng khi TV đổi audio track hoặc seek.
 * **Tải kép thông minh (Multiplexing):** Nhiều TV cùng xem một trận đấu chỉ tốn đúng 1 luồng P2P duy nhất.
 
@@ -203,7 +203,10 @@ Dự án được phân phối dưới giấy phép **[MIT License](LICENSE)**. 
 
 ---
 
-## 9. Tuyên Bố Miễn Trừ Trách Nhiệm (Disclaimer)
-
-> **Important Legal Disclaimer:**  
-> AceHub is an open-source, neutral network stream proxy and gateway utility designed for local area networks (LAN). **AceHub does not provide, host, store, scrape, or distribute any video streams, media files, or copyrighted television channels.** The application acts solely as an HTTP socket pipe between local clients and protocol engines. Users are solely responsible for the legality and origin of any stream identifiers (infohashes) they choose to process with this software.
+> **Important Legal Disclaimer / Tuyên Bố Pháp Lý:**  
+> 
+> **English:**  
+> AceHub is an open-source, neutral network stream proxy and gateway utility designed for local area networks (LAN). **AceHub does not provide, host, store, scrape, or distribute any video streams, media files, or copyrighted television channels.** The application acts solely as a standard HTTP socket pipe between local clients and protocol engines via official/standard APIs. Users are solely responsible for obtaining and verifying the legality, distribution rights, and origin of any stream identifiers (infohashes / content IDs) they choose to process with this software. Third-party components and engines are used subject to their respective licenses and terms of service; AceHub does not emulate unauthorized access levels or circumvent any technological protection measures (TPM).
+> 
+> **Tiếng Việt:**  
+> AceHub là công cụ quản lý và chuyển tiếp luồng mạng nội bộ (LAN Stream Proxy & Gateway) mã nguồn mở. Phần mềm hoạt động như một cầu nối giao thức mạng thuần túy, **không lưu trữ, không thu thập (scrape) và không cung cấp sẵn bất kỳ danh sách kênh hay quyền truy cập nội dung có bản quyền nào**. Việc phát và sử dụng luồng phát phụ thuộc hoàn toàn vào nguồn do người dùng tự cung cấp và tuân thủ các giấy phép dịch vụ của bên thứ ba. AceHub không can thiệp, không giả lập quyền truy cập trái phép và không vô hiệu hóa bất kỳ biện pháp công nghệ bảo vệ quyền nào.

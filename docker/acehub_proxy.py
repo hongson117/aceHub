@@ -3,7 +3,7 @@
 aceHub Linux/Docker Engine Proxy (Port 8000)
 - Zero-Transcode HTTP Video Relay
 - Instant Channel Switching (Grace-Period Cooldown & Clean Session Teardown)
-- AceStream Telnet API Handshake with VIP Auth 0 (0 Ads, No Commercial Nag Screen)
+- AceStream Telnet API Handshake (Standard Protocol Auth)
 - Realtime Diagnostics & Telemetry Dashboard
 """
 
@@ -90,7 +90,7 @@ class AceTelnetSession:
                             self.http_port = int(part.split("=")[1])
                 elif line.startswith("AUTH"):
                     self.is_authenticated = True
-                    logger.info(f"AceStream Engine Authenticated successfully: {line} (VIP Auth 0)")
+                    logger.info(f"AceStream Engine Authenticated successfully: {line} (Standard API Auth)")
                     self.writer.write("STOP\r\n")
                     self.writer.write("STOPDL\r\n")
                     self.writer.write("SETOPTIONS use_stop_notifications=1\r\n")
