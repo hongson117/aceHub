@@ -1,7 +1,19 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
+
+// Deployment-specific values stay out of the public repo: set them in local.properties (git-ignored),
+// as -P gradle properties, or as env vars ACEHUB_CONTROL_WS_URLS / ACEHUB_DEFAULT_CHANNEL.
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+fun acehubCfg(key: String): String =
+    (project.findProperty(key) as String?) ?: localProps.getProperty(key)
+        ?: System.getenv(key.uppercase().replace('.', '_')) ?: ""
 
 android {
     namespace = "vn.lienson.acesport.g2probe"
@@ -11,8 +23,11 @@ android {
         applicationId = "vn.lienson.acesport.g2probe"
         minSdk = 24
         targetSdk = 34
-        versionCode = 21
-        versionName = "1.4.3"
+        versionCode = 22
+        versionName = "1.4.4"
+
+        buildConfigField("String", "CONTROL_WS_URLS", "\"${acehubCfg("acehub.controlWsUrls")}\"")
+        buildConfigField("String", "DEFAULT_CHANNEL_ID", "\"${acehubCfg("acehub.defaultChannel")}\"")
 
         ndk {
             abiFilters.addAll(listOf("armeabi-v7a"))

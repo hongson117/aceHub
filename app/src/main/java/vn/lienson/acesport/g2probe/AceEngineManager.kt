@@ -182,6 +182,42 @@ class AceEngineManager(private val context: Context, private val listener: Engin
         }.start()
     }
 
+    @Volatile var engineRestarts = 0
+        private set
+
+    fun isEngineAlive(): Boolean =
+        embeddedRuntime?.isRunning() == true || isSocketAlive("127.0.0.1", 6878) || isSocketAlive("127.0.0.1", 62062)
+
+    /**
+     * v1.4.4 engine supervisor (called from the health thread every ~20 s): if the embedded engine process
+     * died (e.g. low-memory kill on the 1.8 GB FPT box) restart it and re-announce READY so the hub re-prewarms.
+     */
+    fun superviseEngine() {
+        if (isEngineAlive()) return
+        // Engine adopted from a previous process (no runtime handle) or embedded: (re)create our own runtime.
+        val rt = embeddedRuntime ?: if (boundPackage == "org.acestream.engine" || boundPackage == context.packageName)
+            EmbeddedAceRuntime(context).also { it.prepare(); embeddedRuntime = it } else return
+        Log.w(TAG, "Embedded engine is DOWN - restarting it (restart #${engineRestarts + 1})")
+        try {
+            rt.stop()
+            rt.start()
+            engineRestarts++
+            for (i in 1..30) {
+                Thread.sleep(500)
+                if (isSocketAlive("127.0.0.1", 62062) || isSocketAlive("127.0.0.1", 6878)) {
+                    mainHandler.post {
+                        listener.onEngineStateChanged("READY", "Embedded engine restarted by supervisor")
+                        listener.onEngineReady(6878, 62062, boundPackage, boundVersion)
+                    }
+                    return
+                }
+            }
+            Log.e(TAG, "Engine restart: port did not open within 15 s")
+        } catch (e: Exception) {
+            Log.e(TAG, "Engine restart failed: ${e.message}")
+        }
+    }
+
     private fun isSocketAlive(host: String, port: Int): Boolean {
         return try {
             java.net.Socket().use { sock ->
@@ -246,7 +282,7 @@ class AceEngineManager(private val context: Context, private val listener: Engin
                 engineApiPort = enginePort
                 accessToken = token
 
-                Log.d(TAG, "Engine READY! httpPort=$httpApiPort enginePort=$engineApiPort token=$accessToken")
+                Log.d(TAG, "Engine READY! httpPort=$httpApiPort enginePort=$engineApiPort token=${if (accessToken.isNullOrEmpty()) "none" else "set"}")
                 mainHandler.post {
                     listener.onEngineReady(httpApiPort, engineApiPort, boundPackage, boundVersion)
                 }
@@ -281,7 +317,7 @@ class AceEngineManager(private val context: Context, private val listener: Engin
             if (match != null) {
                 val tok = match.groupValues[1]
                 accessToken = tok
-                Log.i(TAG, "Resolved accessToken from process table: $tok")
+                Log.i(TAG, "Resolved accessToken from process table")
                 return tok
             }
         } catch (e: Exception) {

@@ -1,8 +1,8 @@
-# AceHub (`AceHub-v1.4.3.apk`)
+# AceHub (`AceHub-v1.4.4.apk`)
 
 > **Trạm phát luồng AceStream nội bộ (Headless LAN Stream Gateway) siêu nhẹ cho Android TV Box & Mạng gia đình**
 
-[![Release: v1.4.3](https://img.shields.io/badge/Release-v1.4.3-blue.svg)](https://github.com/hongson117/aceHub/releases/tag/v1.4.3)
+[![Release: v1.4.4](https://img.shields.io/badge/Release-v1.4.4-blue.svg)](https://github.com/hongson117/aceHub/releases/tag/v1.4.4)
 [![Platform: Android TV](https://img.shields.io/badge/Platform-Android%20TV%20%7C%20Google%20TV-green.svg)](https://developer.android.com)
 [![Stream Port: 8000](https://img.shields.io/badge/Stream%20Port-8000-orange.svg)]()
 [![Pass-Through: 0 Transcode](https://img.shields.io/badge/Pass--Through-0%20Transcode-success.svg)]()
@@ -41,7 +41,7 @@ Hãy tưởng tượng **AceHub** giống như một **"trạm tiếp sóng"** �
 
 Quy trình nhanh nhất để phát và xem luồng từ đầu đến cuối:
 
-* **Bước 1:** Tải file **`AceHub-v1.4.3.apk`** từ [Releases](https://github.com/hongson117/aceHub/releases/tag/v1.4.3) và cài đặt lên Android TV Box của bạn.
+* **Bước 1:** Tải file **`AceHub-v1.4.4.apk`** từ [Releases](https://github.com/hongson117/aceHub/releases/tag/v1.4.4) và cài đặt lên Android TV Box của bạn.
 * **Bước 2:** Mở ứng dụng **AceHub** trên màn hình TV Box.
 * **Bước 3:** Chờ khoảng 10–20 giây cho đến khi màn hình hiển thị:
   * Huy hiệu trạng thái: **`🟢 ĐANG HOẠT ĐỘNG`**
@@ -238,6 +238,7 @@ flowchart TD
 | `/prewarm` | `GET` | `application/json` | Nạp trước luồng P2P và lưu làm kênh mặc định khi khởi động lại. |
 | `/config` | `GET` | `application/json` | Đọc / ghi tham số cấu hình trạm (`default_channel`, `always_hot`). |
 | `/stop` | `GET` | `application/json` | Dừng toàn bộ các phiên phát P2P đang hoạt động. |
+| `/diag` | `GET` | `application/json` | (1.4.4, chỉ LAN) Chẩn đoán máy chủ: fds, threads, heap, accept thread, self-probe, lý do thoát tiến trình gần nhất, logcat đã ẩn token (`?log=0` để bỏ log). |
 
 *Bảo mật mạng LAN:* Toàn bộ API quản trị (`/config`, `/stop`, `/prewarm`) tự động chặn các yêu cầu ngoài mạng cục bộ (trả về HTTP 403 đối với IP ngoài dải RFC1918).
 
@@ -299,6 +300,15 @@ chmod +x gradlew
 .\gradlew.bat assembleRelease
 ```
 Tệp APK kết quả được tạo tại: `app/build/outputs/apk/release/aceHub.apk`.
+
+* **Cấu hình triển khai (1.4.4, không commit lên repo):** đặt trong `local.properties` (đã git-ignore), tham số `-P` của Gradle, hoặc biến môi trường `ACEHUB_CONTROL_WS_URLS` / `ACEHUB_DEFAULT_CHANNEL`:
+```properties
+# Cloud Control endpoints (phân tách bằng dấu phẩy; URL đầu = mặc định, các URL sau = xoay vòng dự phòng)
+acehub.controlWsUrls=wss://your-control-hub.example.com/device/connect
+# Kênh mặc định để giữ nóng (content id / infohash) – để trống nếu không dùng
+acehub.defaultChannel=
+```
+Nếu không đặt, agent điều khiển ở chế độ chờ cho đến khi cấu hình `/config?control_server=...`, và không có kênh mặc định.
 
 ---
 

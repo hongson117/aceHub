@@ -21,7 +21,7 @@ class G2ConfigManager(private val context: Context) {
         const val DEFAULT_ACCESS_TOKEN = "YA0WKoM9ov"
 
         // Default: 100% Clean Core - No commercial pay-TV channels or streams
-        const val DEFAULT_CHANNEL_ID = ""
+        val DEFAULT_CHANNEL_ID: String = BuildConfig.DEFAULT_CHANNEL_ID // build-time (acehub.defaultChannel); empty in public builds
         const val DEFAULT_SOURCE_TYPE = "infohash"
         private const val KEY_KEEP_TAILSCALE = "keep_tailscale"
         private const val KEY_DEVICE_ID = "device_id"
@@ -65,6 +65,15 @@ class G2ConfigManager(private val context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_KEEP_TAILSCALE, value).apply()
 
     fun getDefaultDeviceId(): String {
+        // Same identity rules as 1.4.3 (the Workers map boxes by these ids): G2 -> g2box-main, FPT -> fptbox-main.
+        val model = Build.MODEL.uppercase(Locale.ROOT)
+        val manu = Build.MANUFACTURER.uppercase(Locale.ROOT)
+        val product = Build.PRODUCT.uppercase(Locale.ROOT)
+        val device = Build.DEVICE.uppercase(Locale.ROOT)
+        if (model.contains("G2") || model.contains("RT-G2") || manu.contains("SEI") ||
+            product.contains("G2") || device.contains("G2")) return "g2box-main"
+        if (model.contains("FPT") || model.contains("650") || manu.contains("HISENSE") ||
+            product.contains("FHRT") || device.contains("IP940")) return "fptbox-main"
         val cleanModel = Build.MODEL.lowercase(Locale.ROOT).replace(Regex("[^a-z0-9]"), "").take(10)
         val androidId = try {
             Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: ""

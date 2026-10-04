@@ -223,20 +223,31 @@ class CommandRouter(private val context: Context) {
     }
 
     suspend fun restartProcessInternal(): Boolean {
-        Log.w(TAG, "Executing restart_process (Reinitializing Streaming Layer)...")
+        // v1.4.4: a REAL process restart. Re-creating the service inside the same (possibly wedged) process
+        // did not help on FPT; a fresh process does. Reply first, then die; alarm/START_STICKY bring us back.
+        if (vn.lienson.acesport.g2probe.HubRestarter.allowed(context)) {
+            Log.w(TAG, "Executing restart_process: hard restart of the AceHub process in 1.5 s")
+            Thread {
+                try { Thread.sleep(1500) } catch (_: InterruptedException) {}
+                vn.lienson.acesport.g2probe.HubRestarter.hardRestart(context, "restart_process command / watchdog L3")
+            }.apply { isDaemon = true; start() }
+            return true
+        }
+        Log.w(TAG, "Hard-restart budget exhausted: soft reinit of the streaming layer instead")
+        return softRestartProcessInternal()
+    }
+
+    private suspend fun softRestartProcessInternal(): Boolean {
+        Log.w(TAG, "Executing soft restart (Reinitializing Streaming Layer)...")
         return withContext(Dispatchers.IO) {
             try {
-                // 1. Stop current orchestrator service
                 val serviceIntent = Intent(context, G2OrchestratorService::class.java)
                 try {
                     context.stopService(serviceIntent)
                 } catch (e: Exception) {
                     Log.w(TAG, "stopService warning: ${e.message}")
                 }
-
                 delay(1200)
-
-                // 2. Restart G2OrchestratorService in foreground
                 try {
                     ContextCompat.startForegroundService(context, serviceIntent)
                     Log.i(TAG, "G2OrchestratorService restarted.")
@@ -244,16 +255,13 @@ class CommandRouter(private val context: Context) {
                     Log.e(TAG, "Failed to startForegroundService for orchestrator: ${e.message}", e)
                     return@withContext false
                 }
-
                 delay(2000)
-
-                // 3. Prewarm default channel
                 val config = G2ConfigManager(context)
                 val ok = restartStreamInternal(config.defaultChannelId, config.defaultSourceType)
                 Log.i(TAG, "Streaming layer reinitialized. Prewarm success: $ok")
                 return@withContext true
             } catch (e: Exception) {
-                Log.e(TAG, "Exception during restartProcessInternal: ${e.message}", e)
+                Log.e(TAG, "Exception during softRestartProcessInternal: ${e.message}", e)
                 return@withContext false
             }
         }

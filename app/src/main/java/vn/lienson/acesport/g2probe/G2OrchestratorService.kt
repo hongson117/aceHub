@@ -46,6 +46,59 @@ class G2OrchestratorService : Service(), AceEngineManager.EngineListener {
 
     private var notificationManager: NotificationManager? = null
 
+    // ---- v1.4.4 self-health monitor (dedicated thread: works even if coroutine pools are starved) ----
+    @Volatile private var healthRunning = false
+    private var healthThread: Thread? = null
+    @Volatile private var probeConsecutiveFails = 0
+    @Volatile private var probeTotalFails = 0
+    @Volatile private var probeLastOkAt = 0L
+    @Volatile private var rebinds = 0
+    @Volatile private var lastNotificationText = "AceSport Hub"
+
+    fun healthJson(): org.json.JSONObject = org.json.JSONObject().apply {
+        put("self_probe_consecutive_fails", probeConsecutiveFails)
+        put("self_probe_total_fails", probeTotalFails)
+        put("self_probe_last_ok_ms_ago", if (probeLastOkAt > 0) System.currentTimeMillis() - probeLastOkAt else -1)
+        put("rebinds", rebinds)
+        put("engine_restarts", if (::engineManager.isInitialized) engineManager.engineRestarts else 0)
+        put("engine_running", if (::engineManager.isInitialized) engineManager.isEngineAlive() else false)
+        put("monitor_alive", healthThread?.isAlive == true)
+    }
+
+    private fun startHealthMonitor() {
+        healthRunning = true
+        healthThread = Thread({
+            try { Thread.sleep(60_000) } catch (_: InterruptedException) { return@Thread } // startup grace
+            while (healthRunning) {
+                try {
+                    val port = configManager.proxyPort
+                    if (HubHealth.probe(port)) {
+                        probeConsecutiveFails = 0
+                        probeLastOkAt = System.currentTimeMillis()
+                    } else {
+                        probeConsecutiveFails++
+                        probeTotalFails++
+                        Log.e(TAG, "Self-probe of :$port failed ($probeConsecutiveFails in a row)")
+                        if (probeConsecutiveFails == 2) {
+                            rebinds++
+                            proxyServer?.rebind() // fresh listen socket first (cheap, keeps the stream)
+                        }
+                        if (probeConsecutiveFails >= 4) {
+                            if (HubRestarter.allowed(this)) {
+                                HubRestarter.hardRestart(this, "self-probe: :$port did not answer $probeConsecutiveFails times (~80 s)")
+                                return@Thread
+                            } else Log.e(TAG, "Hard-restart budget exhausted; waiting")
+                        }
+                    }
+                    engineManager.superviseEngine()
+                } catch (t: Throwable) {
+                    Log.e(TAG, "health monitor error: ${t.message}", t)
+                }
+                try { Thread.sleep(20_000) } catch (_: InterruptedException) { break }
+            }
+        }, "acehub-health").apply { isDaemon = true; start() }
+    }
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -84,11 +137,21 @@ class G2OrchestratorService : Service(), AceEngineManager.EngineListener {
         // 3. Khởi chạy Watchdog duy trì kết nối Tailscale 24/7 độc lập
         startTailscaleWatchdog()
 
+        // 4. v1.4.4: self-probe of :8000 + engine supervisor + AlarmManager heartbeat
+        startHealthMonitor()
+        HubRestarter.armHeartbeat(this)
+
         Log.i(TAG, "G2OrchestratorService initialized successfully on port ${configManager.proxyPort}.")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.i(TAG, "onStartCommand received intent: ${intent?.action}")
+        // Every startForegroundService() must be answered with startForeground() (also when already running).
+        startAsForeground(lastNotificationText)
+        when (intent?.action) {
+            HubRestarter.ACTION_HEARTBEAT -> HubRestarter.armHeartbeat(this)
+            "ACTION_START_HUB" -> if (probeConsecutiveFails > 0) { rebinds++; proxyServer?.rebind() }
+        }
 
         if (intent?.action == "ACTION_PREWARM") {
             val chId = intent.getStringExtra("channel_id") ?: configManager.defaultChannelId
@@ -105,16 +168,25 @@ class G2OrchestratorService : Service(), AceEngineManager.EngineListener {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        Log.w(TAG, "Task removed - arming restart alarm")
+        HubRestarter.scheduleRestart(this, 3_000)
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         Log.w(TAG, "G2OrchestratorService onDestroy called!")
         instance = null
+        healthRunning = false
+        healthThread?.interrupt()
         tailscaleWatchdogJob?.cancel()
         tailscaleWatchdogJob = null
         scope.cancel()
         proxyServer?.stop()
         proxyServer = null
         engineManager.unbind()
+        EngineReaper.killOrphans() // never leave an engine running after stop
         releaseLocks()
     }
 
@@ -128,6 +200,8 @@ class G2OrchestratorService : Service(), AceEngineManager.EngineListener {
     override fun onEngineReady(httpPort: Int, enginePort: Int, packageName: String, version: String) {
         Log.i(TAG, "Engine READY: $packageName v$version | HTTP :$httpPort | Api :$enginePort | Proxy :${configManager.proxyPort}")
         updateNotification("AceSport Hub Sẵn Sàng (Port ${configManager.proxyPort}) &bull; Engine v$version")
+        // (Re)started engine: old playback URLs point to a dead engine -> drop them before the deep probe re-prewarms.
+        proxyServer?.resetStreams()
 
         // Run Silent Deep Probe with Eleven Sports 1 4K to verify actual video data streaming
         runSilentDeepProbe()
@@ -238,6 +312,7 @@ class G2OrchestratorService : Service(), AceEngineManager.EngineListener {
     }
 
     private fun updateNotification(text: String) {
+        lastNotificationText = text
         try {
             val notification = buildNotification(text)
             notificationManager?.notify(NOTIFICATION_ID, notification)

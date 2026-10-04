@@ -24,7 +24,42 @@ class G2StreamProxyServer(
     companion object {
         private const val TAG = "G2StreamProxy"
         private const val GRACE_PERIOD_MS = 5000L
+        // v1.4.4 hardening
+        private const val MAX_HANDLERS = 96
+        private const val WRITE_TIMEOUT_MS = 30_000L        // a client that takes >30 s to accept one write is dead
+        private const val SOURCE_READ_TIMEOUT_MS = 60_000   // engine sent nothing for 60 s -> drop the relay
     }
+
+    // ---- v1.4.4: dedicated, bounded HTTP handler pool (never the shared Dispatchers.IO) ----
+    private val threadSeq = java.util.concurrent.atomic.AtomicInteger(0)
+    private val handlerPool = java.util.concurrent.ThreadPoolExecutor(
+        8, MAX_HANDLERS, 30L, java.util.concurrent.TimeUnit.SECONDS,
+        java.util.concurrent.SynchronousQueue()
+    ) { r -> Thread(r, "acehub-http-${threadSeq.incrementAndGet()}").apply { isDaemon = true } }
+    private val handlerDispatcher = handlerPool.asCoroutineDispatcher()
+    private val handlerScope = CoroutineScope(handlerDispatcher + SupervisorJob())
+    val activeHandlers = java.util.concurrent.atomic.AtomicInteger(0)
+    @Volatile var acceptRestarts = 0
+        private set
+    @Volatile var lastAcceptError: String? = null
+        private set
+    @Volatile var lastAcceptAt = 0L
+        private set
+    @Volatile var rejectedBusy = 0
+        private set
+    @Volatile var writeTimeoutsClosed = 0
+        private set
+    private var acceptThread: Thread? = null
+    @Volatile private var listenChannel: java.nio.channels.ServerSocketChannel? = null
+
+    /** Relays currently writing to a client; the guard closes any whose write is stuck > WRITE_TIMEOUT_MS. */
+    private class Relay(val sock: Socket) { @Volatile var writeStartedAt = 0L }
+    private val relays: MutableSet<Relay> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+    private val writeGuard = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { r ->
+        Thread(r, "acehub-write-guard").apply { isDaemon = true }
+    }
+
+    private fun closeQuietly(s: Socket?) { try { s?.close() } catch (_: Throwable) {} }
 
     private var serverSocket: ServerSocket? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -55,34 +90,126 @@ class G2StreamProxyServer(
     fun start() {
         if (isRunning) return
         isRunning = true
-        scope.launch {
-            try {
-                val channel = java.nio.channels.ServerSocketChannel.open()
-                channel.socket().reuseAddress = true
-                channel.socket().bind(java.net.InetSocketAddress(java.net.Inet4Address.getByAddress(byteArrayOf(0, 0, 0, 0)), port), 50)
-                serverSocket = channel.socket()
-                Log.i(TAG, "G2StreamProxyServer started and listening on 0.0.0.0:$port (AF_INET IPv4)")
-
-                while (isActive && isRunning) {
-                    val clientSock = serverSocket?.accept() ?: break
-                    scope.launch {
-                        handleClient(clientSock)
-                    }
-                }
-            } catch (e: Exception) {
-                if (isRunning) {
-                    Log.e(TAG, "Server socket error: ${e.message}", e)
+        writeGuard.scheduleWithFixedDelay({
+            val now = System.currentTimeMillis()
+            for (r in relays) {
+                val t = r.writeStartedAt
+                if (t > 0 && now - t > WRITE_TIMEOUT_MS) {
+                    Log.w(TAG, "Client write stuck ${(now - t) / 1000}s -> closing relay socket")
+                    writeTimeoutsClosed++
+                    relays.remove(r)
+                    closeQuietly(r.sock)
                 }
             }
+        }, 10, 10, java.util.concurrent.TimeUnit.SECONDS)
+        // Accept loop on its own thread: it can never be starved by stream relays, and any failure
+        // (IOException, EMFILE, Error) closes the listener and REBINDS instead of leaving a dead,
+        // still-open listen socket (the 1.4.3 FPT wedge: connects time out, nothing accepts).
+        acceptThread = Thread({ acceptLoop() }, "acehub-accept").apply { isDaemon = true; start() }
+    }
+
+    private fun bindListener(): java.nio.channels.ServerSocketChannel {
+        val ch = java.nio.channels.ServerSocketChannel.open()
+        ch.socket().reuseAddress = true
+        ch.socket().bind(java.net.InetSocketAddress(java.net.Inet4Address.getByAddress(byteArrayOf(0, 0, 0, 0)), port), 128)
+        return ch
+    }
+
+    private fun acceptLoop() {
+        var backoff = 500L
+        while (isRunning) {
+            var ch: java.nio.channels.ServerSocketChannel? = null
+            try {
+                ch = bindListener()
+                listenChannel = ch
+                serverSocket = ch.socket()
+                Log.i(TAG, "G2StreamProxyServer listening on 0.0.0.0:$port (accept thread, restarts=$acceptRestarts)")
+                backoff = 500L
+                while (isRunning) {
+                    val client = ch.socket().accept()
+                    lastAcceptAt = System.currentTimeMillis()
+                    dispatch(client)
+                }
+            } catch (t: Throwable) {
+                if (!isRunning) break
+                lastAcceptError = "${t.javaClass.simpleName}: ${t.message}"
+                acceptRestarts++
+                Log.e(TAG, "Accept loop failed ($lastAcceptError) - rebinding in ${backoff}ms", t)
+            } finally {
+                try { ch?.close() } catch (_: Throwable) {}
+            }
+            if (!isRunning) break
+            try { Thread.sleep(backoff) } catch (_: InterruptedException) { break }
+            backoff = (backoff * 2).coerceAtMost(10_000L)
         }
+        Log.i(TAG, "Accept loop exited")
+    }
+
+    private fun dispatch(client: Socket) {
+        try {
+            client.soTimeout = 15000
+            client.keepAlive = true
+            if (activeHandlers.get() >= MAX_HANDLERS - 4) {
+                rejectedBusy++
+                try {
+                    client.getOutputStream().write("HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
+                } catch (_: Throwable) {}
+                closeQuietly(client)
+                return
+            }
+            activeHandlers.incrementAndGet()
+            handlerScope.launch {
+                try { handleClient(client) } finally {
+                    activeHandlers.decrementAndGet()
+                    closeQuietly(client) // every path, incl. readLine()==null (1.4.3 leaked these -> CLOSE_WAIT)
+                }
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "dispatch failed: ${t.message}")
+            closeQuietly(client)
+        }
+    }
+
+    /** Force a fresh listen socket (called by the service health monitor when the self-probe fails). */
+    fun rebind() {
+        Log.w(TAG, "Rebind requested")
+        try { listenChannel?.close() } catch (_: Throwable) {}
+    }
+
+    /** Drop all stream state (engine restarted: old playback URLs point to a dead engine). */
+    fun resetStreams() {
+        streamMap.values.forEach {
+            it.dummyReaderJob?.cancel(); it.expireJob?.cancel(); it.statsJob?.cancel()
+            try { it.client?.close() } catch (_: Throwable) {}
+        }
+        streamMap.clear()
+        latestActiveStream = null
+    }
+
+    fun diagJson(): org.json.JSONObject = org.json.JSONObject().apply {
+        put("listening", listenChannel?.isOpen == true)
+        put("accept_thread_alive", acceptThread?.isAlive == true)
+        put("accept_restarts", acceptRestarts)
+        put("last_accept_error", lastAcceptError ?: org.json.JSONObject.NULL)
+        put("last_accept_ms_ago", if (lastAcceptAt > 0) System.currentTimeMillis() - lastAcceptAt else -1)
+        put("active_handlers", activeHandlers.get())
+        put("pool_threads", handlerPool.poolSize)
+        put("rejected_busy", rejectedBusy)
+        put("relays", relays.size)
+        put("write_timeouts_closed", writeTimeoutsClosed)
+        put("streams", streamMap.size)
     }
 
     fun stop() {
         isRunning = false
+        try { listenChannel?.close() } catch (_: Throwable) {}
         try {
             serverSocket?.close()
         } catch (_: Exception) {}
         serverSocket = null
+        acceptThread?.interrupt()
+        relays.forEach { closeQuietly(it.sock) }
+        relays.clear()
         streamMap.values.forEach {
             it.dummyReaderJob?.cancel()
             it.expireJob?.cancel()
@@ -103,6 +230,9 @@ class G2StreamProxyServer(
         streamMap.clear()
         latestActiveStream = null
         scope.cancel()
+        handlerScope.cancel()
+        writeGuard.shutdownNow()
+        handlerPool.shutdownNow()
     }
 
     suspend fun prewarmStream(channelId: String, sourceType: String, persistent: Boolean = false): Boolean {
@@ -150,7 +280,7 @@ class G2StreamProxyServer(
         }
     }
 
-    private suspend fun handleClient(clientSock: Socket) = withContext(Dispatchers.IO) {
+    private suspend fun handleClient(clientSock: Socket) = withContext(handlerDispatcher) {
         try {
             clientSock.soTimeout = 15000
             val reader = BufferedReader(InputStreamReader(clientSock.getInputStream()))
@@ -222,6 +352,19 @@ class G2StreamProxyServer(
                 return@withContext
             }
 
+            // 1b. v1.4.4 diagnostics (LAN/localhost only; no secrets)
+            if (rawUri.startsWith("/diag")) {
+                if (!isPrivateSubnet(clientSock)) {
+                    sendHttpError(out, 403, "Forbidden")
+                } else {
+                    val withLog = !rawUri.contains("log=0")
+                    val j = HubDiagnostics.build(G2OrchestratorService.instance, this@G2StreamProxyServer, withLog)
+                    sendHttpResponse(out, "application/json", j.toString().toByteArray(Charsets.UTF_8))
+                }
+                clientSock.close()
+                return@withContext
+            }
+
             // 2. Health & Status JSON
             if (rawUri.startsWith("/status") || rawUri.startsWith("/proxy/health") || rawUri.startsWith("/stat")) {
                 val current = latestActiveStream
@@ -236,9 +379,9 @@ class G2StreamProxyServer(
                 val verCode = BuildConfig.VERSION_CODE
                 val tailscaleJson = """{"running":$tsRunning,"ip":"${tsIp ?: ""}","keep_alive":$keepTailscale}"""
                 val json = if (current != null) {
-                    """{"status":"ACTIVE","channel":"${current.channelId}","source_type":"${current.sourceType}","peers":${current.peers},"speed_kbps":${current.speedKbps},"downloaded_bytes":${current.downloaded},"clients":${current.clientCount},"is_persistent":${current.isPersistent},"default_channel":"$defId","always_hot":$alwaysHot,"keep_tailscale":$keepTailscale,"device_id":"$deviceId","token_set":$tokenSet,"app_version":"$appVer","versionCode":$verCode,"response":{"status":"dl","peers":${current.peers},"speed_down":${current.speedKbps}},"tailscale":$tailscaleJson}"""
+                    """{"status":"ACTIVE","channel":"${current.channelId}","source_type":"${current.sourceType}","peers":${current.peers},"speed_kbps":${current.speedKbps},"downloaded_bytes":${current.downloaded},"clients":${current.clientCount},"is_persistent":${current.isPersistent},"default_channel":"$defId","always_hot":$alwaysHot,"keep_tailscale":$keepTailscale,"device_id":"$deviceId","token_set":$tokenSet,"app_version":"$appVer","versionCode":$verCode,"uptime_s":${HubDiagnostics.uptimeSec()},"response":{"status":"dl","peers":${current.peers},"speed_down":${current.speedKbps}},"tailscale":$tailscaleJson}"""
                 } else {
-                    """{"status":"IDLE","default_channel":"$defId","always_hot":$alwaysHot,"keep_tailscale":$keepTailscale,"device_id":"$deviceId","token_set":$tokenSet,"app_version":"$appVer","versionCode":$verCode,"response":{"status":"idle","peers":0,"speed_down":0},"tailscale":$tailscaleJson}"""
+                    """{"status":"IDLE","default_channel":"$defId","always_hot":$alwaysHot,"keep_tailscale":$keepTailscale,"device_id":"$deviceId","token_set":$tokenSet,"app_version":"$appVer","versionCode":$verCode,"uptime_s":${HubDiagnostics.uptimeSec()},"response":{"status":"idle","peers":0,"speed_down":0},"tailscale":$tailscaleJson}"""
                 }
                 sendHttpResponse(out, "application/json", json.toByteArray(Charsets.UTF_8))
                 clientSock.close()
@@ -530,12 +673,15 @@ class G2StreamProxyServer(
                 sourceConn = url.openConnection() as HttpURLConnection
                 sourceConn.instanceFollowRedirects = true
                 sourceConn.connectTimeout = 10000
-                sourceConn.readTimeout = 0 // Keep stream alive during P2P jitter
+                sourceConn.readTimeout = SOURCE_READ_TIMEOUT_MS // 1.4.3 used 0 (forever) -> stuck relays never freed
                 val inStream = sourceConn.inputStream
 
                 val buffer = ByteArray(65536)
                 var bytesRead: Int
                 var firstPacket = true
+                val relay = Relay(clientSock)
+                relays.add(relay)
+                try {
 
                 while (inStream.read(buffer).also { bytesRead = it } != -1) {
                     if (firstPacket) {
@@ -552,6 +698,7 @@ class G2StreamProxyServer(
                                 }
                             }
                         }
+                        relay.writeStartedAt = System.currentTimeMillis()
                         if (syncIdx > 0) {
                             Log.i(TAG, "Stripped $syncIdx bytes preamble before first 0x47 sync byte for client")
                             out.write(buffer, syncIdx, bytesRead - syncIdx)
@@ -559,10 +706,16 @@ class G2StreamProxyServer(
                             out.write(buffer, 0, bytesRead)
                         }
                         out.flush()
+                        relay.writeStartedAt = 0L
                         firstPacket = false
                     } else {
+                        relay.writeStartedAt = System.currentTimeMillis()
                         out.write(buffer, 0, bytesRead)
+                        relay.writeStartedAt = 0L
                     }
+                }
+                } finally {
+                    relays.remove(relay)
                 }
             } catch (e: Exception) {
                 Log.d(TAG, "Client disconnected or pipe closed: ${e.message}")

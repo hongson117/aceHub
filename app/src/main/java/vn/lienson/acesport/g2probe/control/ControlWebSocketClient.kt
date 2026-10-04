@@ -89,7 +89,10 @@ class ControlWebSocketClient(
             scheduleReconnect(60_000L)
             return
         }
-        val serverUrl = configManager.controlServerUrl.ifEmpty { ControlConfig.DEFAULT_SERVER_WS_URL }
+        // Configured URL wins; otherwise rotate through the built-in Workers on each failed attempt.
+        val serverUrl = configManager.controlServerUrl.ifEmpty {
+            ControlConfig.FALLBACK_WS_URLS.getOrElse(urlIndex % ControlConfig.FALLBACK_WS_URLS.size) { ControlConfig.DEFAULT_SERVER_WS_URL }
+        }
         if (serverUrl.isEmpty() || serverUrl.contains("example.com")) {
             Log.d(TAG, "Cloud Control standby: configure control_server via /config to connect.")
             scheduleReconnect(60_000L)
