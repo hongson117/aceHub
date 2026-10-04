@@ -17,7 +17,7 @@ import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
 import java.net.Inet4Address
 import java.net.NetworkInterface
-import java.net.Socket
+import java.util.Collections
 
 class G2OrchestratorService : Service(), AceEngineManager.EngineListener {
 
@@ -25,7 +25,7 @@ class G2OrchestratorService : Service(), AceEngineManager.EngineListener {
         private const val TAG = "G2OrchestratorService"
         private const val NOTIFICATION_ID = 8000
         private const val CHANNEL_ID = "acesport_orchestrator_channel"
-        private const val CHANNEL_NAME = "AceStream Hub Orchestrator"
+        private const val CHANNEL_NAME = "AceSport G2 Orchestrator"
 
         @Volatile
         var instance: G2OrchestratorService? = null
@@ -34,6 +34,7 @@ class G2OrchestratorService : Service(), AceEngineManager.EngineListener {
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
+    private var tailscaleWatchdogJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     lateinit var configManager: G2ConfigManager
@@ -44,8 +45,6 @@ class G2OrchestratorService : Service(), AceEngineManager.EngineListener {
         private set
 
     private var notificationManager: NotificationManager? = null
-    private var watchdogJob: Job? = null
-    private var stallCounter = 0
 
     override fun onCreate() {
         super.onCreate()
@@ -59,91 +58,15 @@ class G2OrchestratorService : Service(), AceEngineManager.EngineListener {
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         createNotificationChannel()
-        startAsForeground("Đang khởi động AceStream Hub & Engine...")
+        startAsForeground("Đang khởi động AceSport Hub & Engine...")
 
-        if (configManager.isAlwaysOn247) {
-            acquireLocks()
-        }
+        acquireLocks()
 
-        // Initialize Engine Manager
+        // 1. Bind & Start AceStream Engine
         engineManager = AceEngineManager(this, this)
-
-        if (configManager.isHubEnabled) {
-            startHubEntirely()
-        } else {
-            updateNotification("Trạm đang tắt • FPT Box được giải phóng 100% tài nguyên")
-            AppLogger.i("SYSTEM", "Trạm phát đang ở chế độ TẮT (FPT Box rảnh rỗi)")
-        }
-    }
-
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.i(TAG, "onStartCommand received intent: ${intent?.action}")
-
-        when (intent?.action) {
-            "ACTION_START_HUB" -> {
-                if (intent.getBooleanExtra("is_boot", false)) {
-                    AppLogger.s("BOOT", "⚡ Khởi động trạm phát tự động sau khi bật nguồn (Headless Auto-Boot)")
-                }
-                startHubEntirely()
-            }
-            "ACTION_STOP_HUB" -> stopHubEntirely()
-            "ACTION_RESTART_HUB" -> {
-                scope.launch(Dispatchers.IO) {
-                    stopHubEntirely()
-                    delay(1500)
-                    launch(Dispatchers.Main) { startHubEntirely() }
-                }
-            }
-            "ACTION_PREWARM" -> {
-                val chId = intent.getStringExtra("channel_id") ?: configManager.defaultChannelId
-                val sType = intent.getStringExtra("source_type") ?: configManager.defaultSourceType
-                scope.launch(Dispatchers.IO) {
-                    proxyServer?.prewarmStream(chId, sType, persistent = true)
-                }
-            }
-        }
-
-        return START_STICKY
-    }
-
-    override fun onBind(intent: Intent?): IBinder? = null
-
-    override fun onDestroy() {
-        super.onDestroy()
-        Log.w(TAG, "G2OrchestratorService onDestroy called!")
-        instance = null
-        scope.cancel()
-        watchdogJob?.cancel()
-        proxyServer?.stop()
-        proxyServer = null
-        engineManager.unbind()
-        releaseLocks()
-    }
-
-    // --- 3 Operational Modes Support ---
-
-    fun stopHubEntirely() {
-        configManager.isHubEnabled = false
-        watchdogJob?.cancel()
-        watchdogJob = null
-        proxyServer?.stop()
-        proxyServer = null
-        engineManager.unbind()
-        releaseLocks()
-        updateNotification("Trạm đã tắt • FPT Box giải phóng 100% RAM & CPU")
-        AppLogger.s("SYSTEM", "🛑 ĐÃ TẮT TOÀN BỘ TRẠM PHÁT. FPT Box đã được giải phóng hoàn toàn 100% RAM & CPU để làm việc khác!")
-    }
-
-    fun startHubEntirely() {
-        configManager.isHubEnabled = true
-        if (configManager.isAlwaysOn247) {
-            acquireLocks()
-        }
-
-        AppLogger.i("SYSTEM", "🚀 Đang khởi động Engine và Trạm phát Proxy cổng ${configManager.proxyPort}...")
         engineManager.bindAndStart()
 
-        proxyServer?.stop()
+        // 2. Start G2StreamProxyServer on port 8000 with Token Provider
         proxyServer = G2StreamProxyServer(
             port = configManager.proxyPort,
             apiPort = 62062,
@@ -158,263 +81,114 @@ class G2OrchestratorService : Service(), AceEngineManager.EngineListener {
             start()
         }
 
-        startWatchdogLoop()
-        wakeUpTailscaleIfInstalled()
-        updateNotification("AceStream Hub Đang Hoạt Động (Port ${configManager.proxyPort})")
-        AppLogger.s("SYSTEM", "🟢 TRẠM PHÁT ĐANG HOẠT ĐỘNG (24/7 Mode: ${if (configManager.isAlwaysOn247) "BẬT" else "TẮT"})")
+        // 3. Khởi chạy Watchdog duy trì kết nối Tailscale 24/7 độc lập
+        startTailscaleWatchdog()
+
+        Log.i(TAG, "G2OrchestratorService initialized successfully on port ${configManager.proxyPort}.")
     }
 
-    private fun startWatchdogLoop() {
-        watchdogJob?.cancel()
-        watchdogJob = scope.launch(Dispatchers.IO) {
-            AppLogger.i("WATCHDOG", "Bảo vệ Watchdog tự phục hồi đã kích hoạt (Tự restart khi nghẽn)")
-            // Đợi 25 giây ban đầu để Engine hoàn tất khởi động bình thường
-            delay(25000)
-            var consecutiveEngineDownCount = 0
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.i(TAG, "onStartCommand received intent: ${intent?.action}")
 
-            while (isActive) {
-                delay(5000)
-                if (!configManager.isHubEnabled) continue
-
-                // Nếu Engine đang trong tiến trình boot, không can thiệp
-                if (engineManager.isStarting) {
-                    consecutiveEngineDownCount = 0
-                    continue
-                }
-
-                // 1. Kiểm tra Engine có bị crash/treo không (Kiểm tra cả socket lẫn HTTP response)
-                val isPort62062Alive = isSocketAlive("127.0.0.1", 62062)
-                val isEngineAlive = isPort62062Alive || checkEngineHttpHealthy()
-
-                if (!isEngineAlive) {
-                    consecutiveEngineDownCount++
-                    // Chỉ coi là chết nếu mất kết nối liên tục 3 lần (15 giây)
-                    if (consecutiveEngineDownCount >= 3) {
-                        consecutiveEngineDownCount = 0
-                        if (configManager.isWatchdogAutoRecover) {
-                            AppLogger.w("WATCHDOG", "⚠️ Engine không phản hồi hoặc bị đơ liên tục 15s! Tự động khởi động lại Engine...")
-                            forceRestartEngine()
-                        }
-                    }
-                } else {
-                    consecutiveEngineDownCount = 0
-                }
-
-                // 2. Kiểm tra luồng có bị nghẽn (0 KB/s khi có client kết nối)
-                val activeStream = proxyServer?.latestActiveStream
-                if (activeStream != null && activeStream.clientCount > 0) {
-                    if (activeStream.speedKbps == 0L) {
-                        stallCounter++
-                        if (stallCounter >= 3) { // 3 * 5s = 15 giây đứng luồng
-                            if (configManager.isWatchdogAutoRecover) {
-                                AppLogger.w("WATCHDOG", "⚠️ Luồng ${activeStream.channelId.take(8)} bị nghẽn 15s (0 KB/s)! Tự động khởi động lại luồng...")
-                                stallCounter = 0
-                                proxyServer?.prewarmStream(activeStream.channelId, activeStream.sourceType, persistent = activeStream.isPersistent)
-                            }
-                        }
-                    } else {
-                        stallCounter = 0
-                    }
-                } else {
-                    stallCounter = 0
-                }
+        if (intent?.action == "ACTION_PREWARM") {
+            val chId = intent.getStringExtra("channel_id") ?: configManager.defaultChannelId
+            val sType = intent.getStringExtra("source_type") ?: configManager.defaultSourceType
+            scope.launch(Dispatchers.IO) {
+                proxyServer?.prewarmStream(chId, sType, persistent = true)
             }
+        } else if (intent?.action == "ACTION_STOP_STREAM") {
+            // Stop stream
         }
+
+        return START_STICKY
     }
 
-    private fun checkEngineHttpHealthy(): Boolean {
-        return try {
-            val url = java.net.URL("http://127.0.0.1:6878/server/api?method=get_version")
-            val conn = url.openConnection() as java.net.HttpURLConnection
-            conn.connectTimeout = 1500
-            conn.readTimeout = 1500
-            val code = conn.responseCode
-            conn.disconnect()
-            code in 200..403
-        } catch (_: Exception) {
-            false
-        }
-    }
+    override fun onBind(intent: Intent?): IBinder? = null
 
-    private suspend fun forceRestartEngine() {
+    override fun onDestroy() {
+        super.onDestroy()
+        Log.w(TAG, "G2OrchestratorService onDestroy called!")
+        instance = null
+        tailscaleWatchdogJob?.cancel()
+        tailscaleWatchdogJob = null
+        scope.cancel()
+        proxyServer?.stop()
+        proxyServer = null
         engineManager.unbind()
-        try {
-            Runtime.getRuntime().exec(arrayOf("sh", "-c", "pkill -9 -f libacepython || killall -9 libacepython.so"))
-        } catch (_: Exception) {}
-        delay(2000)
-        engineManager.bindAndStart()
-        delay(15000)
-    }
-
-    private fun isSocketAlive(host: String, port: Int): Boolean {
-        return try {
-            Socket().use { sock ->
-                sock.connect(java.net.InetSocketAddress(host, port), 800)
-                true
-            }
-        } catch (_: Exception) {
-            false
-        }
-    }
-
-    private fun wakeUpTailscaleIfInstalled() {
-        if (!configManager.isAutoWakeTailscale) return
-        scope.launch(Dispatchers.IO) {
-            try {
-                // Đợi 6 giây cho hệ thống mạng LAN và Wi-Fi sẵn sàng
-                delay(6000)
-                AppLogger.i("TAILSCALE", "🔄 Đang kiểm tra và đánh thức ứng dụng Tailscale tự động...")
-                val tailscalePkg = "com.tailscale.ipn"
-                var launched = false
-
-                // 1. Thử gọi trực tiếp qua ComponentName (vượt qua hạn chế Android 11)
-                try {
-                    val directIntent = Intent().apply {
-                        component = android.content.ComponentName(tailscalePkg, "$tailscalePkg.MainActivity")
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
-                    }
-                    startActivity(directIntent)
-                    launched = true
-                    AppLogger.i("TAILSCALE", "🚀 Đã phát lệnh khởi chạy trực tiếp tới Tailscale MainActivity")
-                } catch (e1: Exception) {
-                    Log.d(TAG, "Direct launch failed: ${e1.message}")
-                }
-
-                // 2. Fallback qua PackageManager nếu chưa chạy
-                if (!launched) {
-                    val pm = packageManager
-                    val launchIntent = pm.getLaunchIntentForPackage(tailscalePkg)
-                    if (launchIntent != null) {
-                        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
-                        startActivity(launchIntent)
-                        launched = true
-                        AppLogger.i("TAILSCALE", "🚀 Đã phát lệnh khởi chạy Tailscale qua PackageManager")
-                    }
-                }
-
-                if (launched) {
-                    AppLogger.s("TAILSCALE", "🟢 Đã đánh thức Tailscale tự động kết nối ngầm cùng AceHub")
-                    // Sau 3 giây, tự động trả màn hình về Home để không che màn hình TV
-                    delay(3000)
-                    val homeIntent = Intent(Intent.ACTION_MAIN).apply {
-                        addCategory(Intent.CATEGORY_HOME)
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    }
-                    startActivity(homeIntent)
-                } else {
-                    AppLogger.w("TAILSCALE", "⚠️ Không tìm thấy gói cài đặt Tailscale (com.tailscale.ipn) trên máy")
-                }
-            } catch (e: Exception) {
-                AppLogger.e("TAILSCALE", "⚠️ Lỗi khi khởi động Tailscale: ${e.message}")
-            }
-        }
+        releaseLocks()
     }
 
     // --- AceEngineManager.EngineListener ---
 
     override fun onEngineStateChanged(state: String, details: String) {
-        AppLogger.i("ENGINE", "Trạng thái Engine: $state ($details)")
-        updateNotification("Engine: $details")
-        MainActivity.instance?.updateEngineSetupStatus(state, details)
+        Log.i(TAG, "Engine state: $state ($details)")
+        updateNotification("Engine: $state ($details)")
     }
 
     override fun onEngineReady(httpPort: Int, enginePort: Int, packageName: String, version: String) {
-        AppLogger.s("ENGINE", "Engine READY: $packageName v$version | HTTP :$httpPort | Api :$enginePort | Proxy :${configManager.proxyPort}")
-        updateNotification("AceStream Hub Sẵn Sàng (Port ${configManager.proxyPort})")
+        Log.i(TAG, "Engine READY: $packageName v$version | HTTP :$httpPort | Api :$enginePort | Proxy :${configManager.proxyPort}")
+        updateNotification("AceSport Hub Sẵn Sàng (Port ${configManager.proxyPort}) &bull; Engine v$version")
 
-        val lanIp = getLanIpAddress()
-        val banner = "=========================================\n" +
-                "Engine IP: $lanIp\n" +
-                "Engine Port: ${configManager.proxyPort}\n" +
-                "Kết nối: Thành công\n" +
-                "========================================="
-        Log.i(TAG, banner)
-        AppLogger.s("SYSTEM", "Kết nối Engine thành công: http://$lanIp:${configManager.proxyPort}")
-        MainActivity.instance?.showEngineStatus(lanIp, configManager.proxyPort, "Thành công")
-        MainActivity.instance?.updateEngineSetupStatus("READY", "Sẵn sàng (Port $httpPort/$enginePort)")
+        // Run Silent Deep Probe with Eleven Sports 1 4K to verify actual video data streaming
+        runSilentDeepProbe()
+    }
 
-        // Chỉ khôi phục luồng nếu người dùng đã chủ động kích hoạt và cấu hình lưu trước đó
-        val savedChannel = configManager.defaultChannelId
-        val savedType = configManager.defaultSourceType
-        if (configManager.isAlwaysHotStream && savedChannel.isNotEmpty()) {
-            AppLogger.i("SYSTEM", "🔄 Khôi phục luồng do người dùng chỉ định: ${savedChannel.take(12)}... ($savedType)")
-            scope.launch(Dispatchers.IO) {
-                delay(2000)
-                val ok = proxyServer?.prewarmStream(savedChannel, savedType, persistent = true) ?: false
-                if (ok) {
-                    AppLogger.s("SYSTEM", "🟢 Đã kết nối lại tín hiệu luồng thành công: http://$lanIp:${configManager.proxyPort}/live")
+    private fun runSilentDeepProbe() {
+        scope.launch(Dispatchers.IO) {
+            delay(1200)
+            val lanIp = getLanIpAddress()
+            val port = configManager.proxyPort
+            val testHash = configManager.defaultChannelId
+
+            if (testHash.isNotEmpty()) {
+                Log.i(TAG, "Starting Silent Deep Probe with default channel: $testHash...")
+                val probeOk = proxyServer?.prewarmStream(testHash, "infohash", persistent = true) ?: false
+                if (probeOk) {
+                    val banner = "\n=========================================\n" +
+                            "Engine IP: $lanIp\n" +
+                            "Engine Port: $port\n" +
+                            "Kết nối: Thành công ($testHash)\n" +
+                            "========================================="
+                    Log.i(TAG, banner)
                 } else {
-                    AppLogger.w("SYSTEM", "⚠️ Chưa thu được tín hiệu luồng từ nguồn phát.")
+                    Log.w(TAG, "Silent Deep Probe: stream probe did not receive enough data within window")
                 }
+            } else {
+                Log.i(TAG, "AceHub is ready in standby mode on http://$lanIp:$port (0 channel active)")
             }
-        } else {
-            AppLogger.s("SYSTEM", "🟢 Trạm phát sẵn sàng ở chế độ rảnh rỗi (Idle). Đang chờ tín hiệu luồng từ thiết bị trong mạng LAN...")
         }
     }
 
-    override fun onEngineError(error: String) {
-        AppLogger.e("ENGINE", "Lỗi Engine: $error")
-        updateNotification("Engine Error: $error")
-        MainActivity.instance?.updateEngineSetupStatus("ERROR", error)
-    }
-
-    private fun getLanIpAddress(): String {
+    fun getLanIpAddress(): String {
         try {
-            val interfaces = NetworkInterface.getNetworkInterfaces()
+            val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
+            val candidateIps = mutableListOf<String>()
             while (interfaces.hasMoreElements()) {
                 val iface = interfaces.nextElement()
                 if (iface.isLoopback || !iface.isUp) continue
-                val addresses = iface.inetAddresses
-                while (addresses.hasMoreElements()) {
-                    val addr = addresses.nextElement()
-                    if (!addr.isLoopbackAddress && addr is Inet4Address) {
-                        val ip = addr.hostAddress
-                        if (ip != null && !ip.startsWith("127.")) {
-                            return ip
+                val addrs = iface.inetAddresses
+                while (addrs.hasMoreElements()) {
+                    val addr = addrs.nextElement()
+                    if (addr is java.net.Inet4Address && !addr.isLoopbackAddress) {
+                        val host = addr.hostAddress ?: continue
+                        if (host.startsWith("192.168.")) return host
+                        if (!host.startsWith("127.") && !host.startsWith("172.16.")) {
+                            candidateIps.add(host)
                         }
                     }
                 }
             }
+            if (candidateIps.isNotEmpty()) return candidateIps.first()
         } catch (_: Exception) {}
         return "127.0.0.1"
     }
 
-    private fun startAsForeground(contentText: String) {
-        val notification = buildNotification(contentText)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
-        }
+    override fun onEngineError(error: String) {
+        Log.e(TAG, "Engine ERROR: $error")
+        updateNotification("Lỗi Engine: $error")
     }
 
-    private fun updateNotification(contentText: String) {
-        try {
-            notificationManager?.notify(NOTIFICATION_ID, buildNotification(contentText))
-        } catch (_: Exception) {}
-    }
-
-    private fun buildNotification(contentText: String): Notification {
-        val launchIntent = packageManager.getLaunchIntentForPackage(packageName) ?: Intent(this, MainActivity::class.java)
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            launchIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("AceStream Hub 24/7")
-            .setContentText(contentText)
-            .setSmallIcon(R.drawable.app_icon)
-            .setContentIntent(pendingIntent)
-            .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .build()
-    }
+    // --- Foreground Notification & Locks ---
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -423,45 +197,174 @@ class G2OrchestratorService : Service(), AceEngineManager.EngineListener {
                 CHANNEL_NAME,
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "AceStream Hub 24/7 Foreground Service"
+                description = "AceSport LAN Stream Orchestrator on Port 8000"
                 setShowBadge(false)
             }
             notificationManager?.createNotificationChannel(channel)
         }
     }
 
-    fun acquireLocks() {
+    private fun buildNotification(statusText: String): Notification {
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName) ?: Intent(this, MainActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            launchIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("AceSport G2 Hub (Port 8000)")
+            .setContentText(statusText)
+            .setSmallIcon(android.R.drawable.stat_sys_upload_done)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .build()
+    }
+
+    private fun startAsForeground(initialText: String) {
+        val notification = buildNotification(initialText)
         try {
-            if (wakeLock == null) {
-                val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "AceStreamHub::CpuWakeLock").apply {
-                    setReferenceCounted(false)
-                    acquire(24 * 60 * 60 * 1000L)
-                }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
             }
-            if (wifiLock == null) {
-                val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-                @Suppress("DEPRECATION")
-                wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "AceStreamHub::WifiLock").apply {
-                    setReferenceCounted(false)
-                    acquire()
-                }
-            }
-            AppLogger.d("SYSTEM", "Đã khóa CPU & Wi-Fi giữ trạng thái 24/7 không ngủ")
         } catch (e: Exception) {
-            Log.w(TAG, "Error acquiring locks: ${e.message}")
+            Log.e(TAG, "Failed to startForeground: ${e.message}", e)
         }
     }
 
-    fun releaseLocks() {
+    private fun updateNotification(text: String) {
+        try {
+            val notification = buildNotification(text)
+            notificationManager?.notify(NOTIFICATION_ID, notification)
+        } catch (e: Exception) {
+            Log.d(TAG, "Failed to update notification: ${e.message}")
+        }
+    }
+
+    private fun acquireLocks() {
+        try {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "AceSport::G2OrchestratorWakeLock").apply {
+                setReferenceCounted(false)
+                acquire(24 * 60 * 60 * 1000L) // 24 hours lock renewed
+            }
+
+            val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            wifiLock = wifiManager.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "AceSport::G2WifiLock").apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+            Log.i(TAG, "Acquired WakeLock and WifiLock for 24/7 background operation.")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error acquiring locks: ${e.message}")
+        }
+    }
+
+    private fun releaseLocks() {
         try {
             wakeLock?.let { if (it.isHeld) it.release() }
             wakeLock = null
             wifiLock?.let { if (it.isHeld) it.release() }
             wifiLock = null
-            AppLogger.d("SYSTEM", "Đã giải phóng khóa CPU & Wi-Fi")
         } catch (e: Exception) {
-            Log.w(TAG, "Error releasing locks: ${e.message}")
+            Log.e(TAG, "Error releasing locks: ${e.message}")
         }
+    }
+
+    // --- Tailscale 24/7 Watchdog ---
+
+    fun hasTailscaleIp(): Boolean {
+        return getTailscaleIp() != null
+    }
+
+    fun getTailscaleIp(): String? {
+        return try {
+            val interfaces = NetworkInterface.getNetworkInterfaces() ?: return null
+            for (iface in Collections.list(interfaces)) {
+                if (!iface.isUp) continue
+                for (addr in Collections.list(iface.inetAddresses)) {
+                    if (addr is Inet4Address && !addr.isLoopbackAddress) {
+                        val ip = addr.hostAddress ?: continue
+                        val parts = ip.split(".")
+                        if (parts.size == 4 && parts[0] == "100") {
+                            val second = parts[1].toIntOrNull() ?: 0
+                            if (second in 64..127) return ip
+                        }
+                    }
+                }
+            }
+            null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun wakeTailscale(context: Context) {
+        if (!configManager.isKeepTailscale) {
+            Log.d(TAG, "Bỏ qua đánh thức Tailscale vì tự động giữ kết nối Tailscale đang TẮT.")
+            return
+        }
+        try {
+            Log.i(TAG, "🚀 Đang tự động đánh thức Tailscale (com.tailscale.ipn)...")
+            try {
+                Runtime.getRuntime().exec(arrayOf("am", "start", "-n", "com.tailscale.ipn/.MainActivity"))
+            } catch (_: Exception) {
+                val launchIntent = context.packageManager.getLaunchIntentForPackage("com.tailscale.ipn")
+                launchIntent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (launchIntent != null) context.startActivity(launchIntent)
+            }
+
+            // Trả lại màn hình Home TV sau 3.5 giây để không làm gián đoạn người dùng
+            scope.launch(Dispatchers.IO) {
+                delay(3500)
+                try {
+                    Runtime.getRuntime().exec(arrayOf("input", "keyevent", "3"))
+                } catch (_: Exception) {}
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Lỗi khi đánh thức Tailscale: ${e.message}")
+        }
+    }
+
+    fun startTailscaleWatchdog() {
+        tailscaleWatchdogJob?.cancel()
+        if (!configManager.isKeepTailscale) {
+            Log.i(TAG, "Tự động giữ kết nối Tailscale đang TẮT. Không khởi chạy Watchdog.")
+            return
+        }
+        tailscaleWatchdogJob = scope.launch(Dispatchers.IO) {
+            // Kiểm tra ngay khi khởi động
+            if (!hasTailscaleIp()) {
+                Log.w(TAG, "Tailscale chưa có IP 100.64.0.0/10 lúc khởi động, đang tự động đánh thức...")
+                wakeTailscale(this@G2OrchestratorService)
+            }
+            // Vòng lặp giám sát định kỳ mỗi 60 giây
+            while (isActive) {
+                delay(60_000)
+                if (!configManager.isKeepTailscale) {
+                    Log.i(TAG, "Watchdog Tailscale dừng lại do cài đặt đã tắt.")
+                    break
+                }
+                try {
+                    if (!hasTailscaleIp()) {
+                        Log.w(TAG, "Watchdog: Phát hiện mất kết nối Tailscale (100.64.0.0/10)! Đang tự động đánh thức...")
+                        wakeTailscale(this@G2OrchestratorService)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Lỗi Tailscale watchdog: ${e.message}")
+                }
+            }
+        }
+    }
+
+    fun stopTailscaleWatchdog() {
+        tailscaleWatchdogJob?.cancel()
+        tailscaleWatchdogJob = null
+        Log.i(TAG, "Đã dừng tiến trình Tailscale Watchdog.")
     }
 }

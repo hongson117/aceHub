@@ -26,20 +26,26 @@ class BootReceiver : BroadcastReceiver() {
         )
 
         if (action in validActions) {
+            // 1. Always launch AceHubControlService on boot / app update for 24/7 remote management
+            try {
+                Log.i(TAG, "Launching AceHubControlService in foreground...")
+                val controlIntent = Intent(context, vn.lienson.acesport.g2probe.control.AceHubControlService::class.java)
+                ContextCompat.startForegroundService(context, controlIntent)
+                Log.i(TAG, "AceHubControlService startForegroundService invoked successfully.")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to start AceHubControlService on boot: ${e.message}", e)
+            }
+
+            // 2. Launch G2OrchestratorService if auto-start is enabled
             val config = G2ConfigManager(context)
             if (config.isAutoStartBoot) {
-                AppLogger.s("BOOT", "⚡ Thiết bị đã khởi động nguồn ($action)! Tự động kích hoạt Trạm phát AceStream Hub...")
                 Log.i(TAG, "Auto-start enabled. Launching G2OrchestratorService in foreground...")
                 try {
-                    val serviceIntent = Intent(context, G2OrchestratorService::class.java).apply {
-                        this.action = "ACTION_START_HUB"
-                        putExtra("is_boot", true)
-                    }
+                    val serviceIntent = Intent(context, G2OrchestratorService::class.java)
                     ContextCompat.startForegroundService(context, serviceIntent)
                     Log.i(TAG, "G2OrchestratorService startForegroundService invoked successfully.")
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to start G2OrchestratorService on boot: ${e.message}", e)
-                    AppLogger.e("BOOT", "Lỗi khởi động dịch vụ khi boot: ${e.message}")
                 }
             } else {
                 Log.i(TAG, "Auto-start on boot is disabled by user configuration.")

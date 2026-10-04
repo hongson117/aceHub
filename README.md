@@ -1,8 +1,8 @@
-# AceHub (`aceHub.apk`)
+# AceHub (`AceHub-v1.4.3.apk`)
 
 > **Trạm phát luồng AceStream nội bộ (Headless LAN Stream Gateway) siêu nhẹ cho Android TV Box & Mạng gia đình**
 
-[![Release: v1.0.8](https://img.shields.io/badge/Release-v1.0.8-blue.svg)](https://github.com/hongson117/aceHub/releases/tag/v1.0.8)
+[![Release: v1.4.3](https://img.shields.io/badge/Release-v1.4.3-blue.svg)](https://github.com/hongson117/aceHub/releases/tag/v1.4.3)
 [![Platform: Android TV](https://img.shields.io/badge/Platform-Android%20TV%20%7C%20Google%20TV-green.svg)](https://developer.android.com)
 [![Stream Port: 8000](https://img.shields.io/badge/Stream%20Port-8000-orange.svg)]()
 [![Pass-Through: 0 Transcode](https://img.shields.io/badge/Pass--Through-0%20Transcode-success.svg)]()
@@ -24,9 +24,9 @@ Hãy tưởng tượng **AceHub** giống như một **"trạm tiếp sóng"** �
 1. Bạn đưa cho AceHub một **mã luồng** (gọi là Content ID hoặc Infohash).
 2. AceHub sẽ tự động nhận dữ liệu của luồng đó qua mạng và biến nó thành một đường link video cực kỳ đơn giản:
    ```text
-   http://192.168.1.173:8000/live
+   http://192.168.1.100:8000/live
    ```
-   *(Trong đó `192.168.1.173` là địa chỉ IP của chiếc Box nhà bạn).*
+   *(Trong đó `192.168.1.100` là địa chỉ IP của chiếc Box nhà bạn).*
 3. Bất kỳ thiết bị nào khác trong nhà (Smart TV phòng khách, Apple TV, máy tính xách tay, điện thoại...) chỉ cần mở đúng đường link trên là có thể xem video mượt mà.
 
 ### 4 Cam kết minh bạch của AceHub:
@@ -41,7 +41,7 @@ Hãy tưởng tượng **AceHub** giống như một **"trạm tiếp sóng"** �
 
 Quy trình nhanh nhất để phát và xem luồng từ đầu đến cuối:
 
-* **Bước 1:** Tải file **`aceHub-v1.0.8.apk`** từ [Releases](https://github.com/hongson117/aceHub/releases/tag/v1.0.8) và cài đặt lên Android TV Box của bạn.
+* **Bước 1:** Tải file **`AceHub-v1.4.3.apk`** từ [Releases](https://github.com/hongson117/aceHub/releases/tag/v1.4.3) và cài đặt lên Android TV Box của bạn.
 * **Bước 2:** Mở ứng dụng **AceHub** trên màn hình TV Box.
 * **Bước 3:** Chờ khoảng 10–20 giây cho đến khi màn hình hiển thị:
   * Huy hiệu trạng thái: **`🟢 ĐANG HOẠT ĐỘNG`**
@@ -53,7 +53,7 @@ Quy trình nhanh nhất để phát và xem luồng từ đầu đến cuối:
   ```text
   http://IP-CỦA-BOX:8000/live
   ```
-  *(Ví dụ: `http://192.168.1.173:8000/live`)*
+  *(Ví dụ: `http://192.168.1.100:8000/live`)*
 
 ---
 
@@ -66,8 +66,8 @@ Bạn không cần đọc sách giáo khoa về mạng máy tính, chỉ cần n
 | **Android TV Box** | Chiếc hộp nhỏ cắm vào TV dùng hệ điều hành Android (như FPT Play Box, Mi Box, Tanix...), nơi bạn cài đặt và chạy ứng dụng AceHub. | Chiếc Box đặt cạnh TV phòng khách. |
 | **Content ID / Infohash** | Mã định danh duy nhất của một luồng phát video (thường là một chuỗi 40 ký tự gồm chữ và số). Có thể xem như "số hiệu kênh". | `dd8255ecdc7ca55fb0bbf81323...` |
 | **Peer** | Những người/máy khác trên mạng đang cùng chia sẻ dữ liệu của luồng phát đó. Càng nhiều peer thì video tải về càng nhanh và ổn định. | Màn hình báo: `Peers: 15`. |
-| **IP (Địa chỉ mạng)** | Tọa độ nhận diện của chiếc Android TV Box trong mạng WiFi/mạng dây gia đình bạn. | `192.168.1.173` |
-| **/live** | Đuôi của đường link phát video trực tiếp. Mọi phần mềm xem phim đều dùng đuôi này để nhận hình ảnh. | `http://192.168.1.173:8000/live` |
+| **IP (Địa chỉ mạng)** | Tọa độ nhận diện của chiếc Android TV Box trong mạng WiFi/mạng dây gia đình bạn. | `192.168.1.100` |
+| **/live** | Đuôi của đường link phát video trực tiếp. Mọi phần mềm xem phim đều dùng đuôi này để nhận hình ảnh. | `http://192.168.1.100:8000/live` |
 
 ---
 
@@ -128,7 +128,7 @@ Không xem được
 1. Cài đặt **VLC Media Player** miễn phí trên máy tính xách tay (Windows/macOS) hoặc điện thoại di động (Android/iOS).
 2. Đảm bảo thiết bị của bạn đang kết nối chung mạng WiFi với chiếc Android TV Box.
 3. Mở VLC → Vào mục **Media** (hoặc Mạng) → Chọn **Open Network Stream** (Mở luồng mạng).
-4. Dán địa chỉ phát hiển thị trên màn hình AceHub vào (Ví dụ: `http://192.168.1.173:8000/live`) và bấm **Play**.
+4. Dán địa chỉ phát hiển thị trên màn hình AceHub vào (Ví dụ: `http://192.168.1.100:8000/live`) và bấm **Play**.
 
 * **Nếu VLC phát video bình thường:** Khẳng định 100% AceHub, bộ máy Engine và nguồn phát đều đang hoạt động hoàn hảo.
 * **Nếu sau đó Smart TV hay app riêng không xem được:** Hãy tập trung kiểm tra ứng dụng hoặc cài đặt mạng trên TV đó, tuyệt đối không cần chỉnh sửa hay cài lại AceHub.

@@ -12,6 +12,7 @@ import java.net.Socket
 import java.net.URL
 import java.net.URLDecoder
 import java.util.concurrent.ConcurrentHashMap
+import vn.lienson.acesport.g2probe.control.AceHubControlService
 
 class G2StreamProxyServer(
     private val port: Int = 8000,
@@ -61,7 +62,6 @@ class G2StreamProxyServer(
                 channel.socket().bind(java.net.InetSocketAddress(java.net.Inet4Address.getByAddress(byteArrayOf(0, 0, 0, 0)), port), 50)
                 serverSocket = channel.socket()
                 Log.i(TAG, "G2StreamProxyServer started and listening on 0.0.0.0:$port (AF_INET IPv4)")
-                AppLogger.s("PROXY", "Trạm phát Proxy cổng $port đã sẵn sàng lắng nghe trên 0.0.0.0:$port (IPv4)")
 
                 while (isActive && isRunning) {
                     val clientSock = serverSocket?.accept() ?: break
@@ -106,7 +106,6 @@ class G2StreamProxyServer(
     }
 
     suspend fun prewarmStream(channelId: String, sourceType: String, persistent: Boolean = false): Boolean {
-        AppLogger.i("PROXY", "⚡ Bắt đầu yêu cầu nạp luồng: ${channelId.take(12)}... ($sourceType)")
         return try {
             val stream = getOrCreateStream(channelId, sourceType, persistent)
             if (stream != null) {
@@ -115,160 +114,14 @@ class G2StreamProxyServer(
                     startDummyReader(stream)
                 }
                 Log.i(TAG, "Prewarmed channel $channelId successfully (persistent=$persistent)")
-                AppLogger.s("PROXY", "🟢 Luồng sẵn sàng tại: ${stream.playbackUrl}")
                 true
             } else {
                 Log.w(TAG, "Failed to prewarm channel $channelId")
-                AppLogger.e("PROXY", "🔴 Không thể khởi tạo luồng từ Engine cho kênh: ${channelId.take(12)}...")
                 false
             }
         } catch (e: Exception) {
             Log.e(TAG, "Prewarm exception: ${e.message}")
-            AppLogger.e("PROXY", "🔴 Lỗi ngoại lệ khi nạp luồng: ${e.message}", e)
             false
-        }
-    }
-
-    enum class ProbeStage {
-        ENGINE_UNRESPONSIVE,       // Không thể bắt tay hoặc Engine từ chối tạo phiên (Mức 1)
-        CONNECTED_INSUFFICIENT,    // Kết nối được HTTP playback nhưng nhận dưới ngưỡng tối thiểu < 64KB (Mức 2)
-        SUCCESS_VERIFIED           // Nhận đủ >= 64KB (65,536 bytes) dữ liệu video hợp lệ từ Engine/Swarm (Mức 3)
-    }
-
-    data class ProbeResult(
-        val success: Boolean,
-        val stage: ProbeStage,
-        val bytesRead: Long,
-        val bytesPerSec: Long,
-        val peers: Int,
-        val deltaDownloadedBytes: Long,
-        val isMediaValid: Boolean,
-        val playbackUrl: String?,
-        val message: String
-    )
-
-    suspend fun probeStreamSignal(
-        channelId: String,
-        sourceType: String,
-        timeoutMs: Long = 10000L
-    ): ProbeResult = withContext(Dispatchers.IO) {
-        AppLogger.i("PROBE", "🔍 Khởi tạo thăm dò tín hiệu thực tế cho: ${channelId.take(12)}... ($sourceType)")
-
-        val initialStream = streamMap[channelId]
-        val initialDownloaded = initialStream?.downloaded ?: 0L
-
-        val stream = getOrCreateStream(channelId, sourceType, persistent = false)
-        if (stream == null || stream.playbackUrl.isEmpty()) {
-            AppLogger.e("PROBE", "🔴 Mức 1 thất bại: Engine không phản hồi hoặc từ chối tạo luồng.")
-            return@withContext ProbeResult(
-                success = false,
-                stage = ProbeStage.ENGINE_UNRESPONSIVE,
-                bytesRead = 0L,
-                bytesPerSec = 0L,
-                peers = 0,
-                deltaDownloadedBytes = 0L,
-                isMediaValid = false,
-                playbackUrl = null,
-                message = "Engine không phản hồi hoặc từ chối tạo luồng (Mức 1 thất bại)"
-            )
-        }
-
-        var totalBytes = 0L
-        var conn: HttpURLConnection? = null
-        var isMediaValid = false
-        val startTime = System.currentTimeMillis()
-        val minRequiredBytes = 65536L // 64 KiB minimum threshold for valid stream verification
-
-        try {
-            AppLogger.i("PROBE", "📡 Mở kết nối đọc dòng byte media từ Engine: ${stream.playbackUrl}")
-            val url = URL(stream.playbackUrl)
-            conn = url.openConnection() as HttpURLConnection
-            conn.connectTimeout = 6000
-            conn.readTimeout = 6000
-            val inStream = conn.inputStream
-            val buffer = ByteArray(16384)
-
-            while (isActive && (System.currentTimeMillis() - startTime) < timeoutMs && totalBytes < minRequiredBytes) {
-                val n = inStream.read(buffer)
-                if (n > 0) {
-                    if (totalBytes == 0L && n >= 4) {
-                        // Check MPEG-TS sync byte 0x47 or standard media container header
-                        isMediaValid = (buffer[0] == 0x47.toByte()) || 
-                                       (buffer[0] == 0x1A.toByte() && buffer[1] == 0x45.toByte()) || 
-                                       (buffer[0] == '#'.code.toByte()) || 
-                                       (buffer[4] == 'f'.code.toByte() && buffer[5] == 't'.code.toByte())
-                    }
-                    totalBytes += n
-                } else if (n == -1) {
-                    break
-                }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Probe read error: ${e.message}")
-        } finally {
-            conn?.disconnect()
-        }
-
-        val elapsedMs = maxOf(1L, System.currentTimeMillis() - startTime)
-        val bytesPerSec = (totalBytes * 1000L) / elapsedMs
-        val peers = stream.peers
-        val finalDownloaded = stream.downloaded
-        val deltaDownloaded = if (finalDownloaded >= initialDownloaded) finalDownloaded - initialDownloaded else 0L
-
-        // Cleanup probe session to prevent lingering resource leaks if no clients are active
-        if (stream.clientCount == 0 && !stream.isPersistent) {
-            stream.statsJob?.cancel()
-            stream.dummyReaderJob?.cancel()
-            stream.client?.close()
-            if (!stream.commandUrl.isNullOrEmpty()) {
-                val cUrl = stream.commandUrl
-                scope.launch(Dispatchers.IO) {
-                    try {
-                        val stopConn = URL("${cUrl}/stop").openConnection() as HttpURLConnection
-                        stopConn.connectTimeout = 1500
-                        stopConn.readTimeout = 1500
-                        stopConn.inputStream.read()
-                    } catch (_: Exception) {}
-                }
-            }
-            streamMap.remove(channelId)
-            if (latestActiveStream?.channelId == channelId) {
-                latestActiveStream = null
-            }
-        }
-
-        if (totalBytes >= minRequiredBytes) {
-            val msg = "Đã nhận ${(totalBytes / 1024)} KiB media hợp lệ (Swarm: $peers peers | Tải mới: ${(deltaDownloaded / 1024)} KiB)"
-            AppLogger.s("PROBE", "🟢 Mức 3 đạt: $msg")
-            ProbeResult(
-                success = true,
-                stage = ProbeStage.SUCCESS_VERIFIED,
-                bytesRead = totalBytes,
-                bytesPerSec = bytesPerSec,
-                peers = peers,
-                deltaDownloadedBytes = deltaDownloaded,
-                isMediaValid = isMediaValid,
-                playbackUrl = stream.playbackUrl,
-                message = msg
-            )
-        } else {
-            val msg = if (totalBytes > 0) {
-                "Nhận được $totalBytes byte (< 64 KiB), chưa đủ ngưỡng nghiệm thu luồng trong ${timeoutMs / 1000}s"
-            } else {
-                "Không nhận được dữ liệu (0 byte) sau ${timeoutMs / 1000}s (Peers: $peers)"
-            }
-            AppLogger.w("PROBE", "⚠️ Mức 2 cảnh báo: $msg")
-            ProbeResult(
-                success = false,
-                stage = ProbeStage.CONNECTED_INSUFFICIENT,
-                bytesRead = totalBytes,
-                bytesPerSec = bytesPerSec,
-                peers = peers,
-                deltaDownloadedBytes = deltaDownloaded,
-                isMediaValid = isMediaValid,
-                playbackUrl = stream.playbackUrl,
-                message = msg
-            )
         }
     }
 
@@ -295,11 +148,6 @@ class G2StreamProxyServer(
                 conn?.disconnect()
             }
         }
-    }
-
-    private fun isLocalOrLanClient(clientSock: Socket): Boolean {
-        val addr = clientSock.inetAddress ?: return false
-        return addr.isLoopbackAddress || addr.isSiteLocalAddress || addr.isLinkLocalAddress || addr.isAnyLocalAddress
     }
 
     private suspend fun handleClient(clientSock: Socket) = withContext(Dispatchers.IO) {
@@ -329,74 +177,70 @@ class G2StreamProxyServer(
                 return@withContext
             }
 
-            if (parts[0] != "GET") {
+            if (parts[0] != "GET" && parts[0] != "POST") {
                 sendHttpError(out, 400, "Bad Request")
                 clientSock.close()
                 return@withContext
             }
 
-            val rawUri = parts[1]
+            val httpMethod = parts[0].uppercase()
 
-            // Enforce LAN-only restriction on management, probe and configuration APIs
-            val isManagementUri = rawUri.startsWith("/config") ||
-                    rawUri.startsWith("/prewarm") ||
-                    rawUri.startsWith("/probe") ||
-                    rawUri.startsWith("/stop") ||
-                    rawUri.startsWith("/restart") ||
-                    rawUri.startsWith("/log") ||
-                    rawUri.startsWith("/api/log")
-            if (isManagementUri && !isLocalOrLanClient(clientSock)) {
-                Log.w(TAG, "Blocked unauthorized WAN request to management API: $rawUri from ${clientSock.inetAddress}")
-                sendHttpError(out, 403, "Forbidden: Management API is restricted to local LAN network")
-                clientSock.close()
-                return@withContext
+            var hostHeader: String? = null
+            var contentLength = 0
+            var hLine: String? = reader.readLine()
+            while (!hLine.isNullOrEmpty()) {
+                if (hLine.startsWith("Host:", ignoreCase = true)) {
+                    hostHeader = hLine.substring(5).trim()
+                } else if (hLine.startsWith("Content-Length:", ignoreCase = true)) {
+                    contentLength = hLine.substring(15).trim().toIntOrNull() ?: 0
+                }
+                hLine = reader.readLine()
             }
+
+            var bodyStr = ""
+            if (contentLength > 0) {
+                val buf = CharArray(contentLength)
+                var readTotal = 0
+                while (readTotal < contentLength) {
+                    val r = reader.read(buf, readTotal, contentLength - readTotal)
+                    if (r <= 0) break
+                    readTotal += r
+                }
+                bodyStr = String(buf, 0, readTotal)
+            }
+
+            val rawUri = parts[1]
+            val localIp = try { clientSock.localAddress.hostAddress } catch (_: Exception) { null }
+            val resolvedHost = hostHeader?.takeIf { it.isNotEmpty() }
+                ?: (if (localIp != null && localIp.isNotEmpty() && !localIp.startsWith("0.")) "$localIp:$port" else "127.0.0.1:$port")
 
             // 1. Dashboard UI
             if (rawUri == "/" || rawUri == "/index.html" || rawUri == "/dashboard") {
-                val html = renderDashboardHtml()
+                val html = renderDashboardHtml(resolvedHost)
                 sendHttpResponse(out, "text/html; charset=utf-8", html.toByteArray(Charsets.UTF_8))
                 clientSock.close()
                 return@withContext
             }
 
-            // 1b. Realtime Diagnostics Log Export
-            if (rawUri == "/log" || rawUri == "/log.txt" || rawUri.startsWith("/api/log")) {
-                val text = AppLogger.getFullLogText()
-                sendHttpResponse(out, "text/plain; charset=utf-8", text.toByteArray(Charsets.UTF_8))
-                clientSock.close()
-                return@withContext
-            }
-
             // 2. Health & Status JSON
-            if (rawUri.startsWith("/status") || rawUri.startsWith("/proxy/health")) {
+            if (rawUri.startsWith("/status") || rawUri.startsWith("/proxy/health") || rawUri.startsWith("/stat")) {
                 val current = latestActiveStream
                 val defId = configManager?.defaultChannelId ?: ""
                 val alwaysHot = configManager?.isAlwaysHotStream ?: false
+                val tsIp = G2OrchestratorService.instance?.getTailscaleIp()
+                val tsRunning = !tsIp.isNullOrEmpty()
+                val keepTailscale = configManager?.isKeepTailscale ?: false
+                val deviceId = configManager?.deviceId ?: ""
+                val tokenSet = configManager?.isTokenSet ?: false
+                val appVer = BuildConfig.VERSION_NAME
+                val verCode = BuildConfig.VERSION_CODE
+                val tailscaleJson = """{"running":$tsRunning,"ip":"${tsIp ?: ""}","keep_alive":$keepTailscale}"""
                 val json = if (current != null) {
-                    """{"status":"ACTIVE","channel":"${current.channelId}","source_type":"${current.sourceType}","peers":${current.peers},"speed_kbps":${current.speedKbps},"downloaded_bytes":${current.downloaded},"clients":${current.clientCount},"is_persistent":${current.isPersistent},"default_channel":"$defId","always_hot":$alwaysHot}"""
+                    """{"status":"ACTIVE","channel":"${current.channelId}","source_type":"${current.sourceType}","peers":${current.peers},"speed_kbps":${current.speedKbps},"downloaded_bytes":${current.downloaded},"clients":${current.clientCount},"is_persistent":${current.isPersistent},"default_channel":"$defId","always_hot":$alwaysHot,"keep_tailscale":$keepTailscale,"device_id":"$deviceId","token_set":$tokenSet,"app_version":"$appVer","versionCode":$verCode,"response":{"status":"dl","peers":${current.peers},"speed_down":${current.speedKbps}},"tailscale":$tailscaleJson}"""
                 } else {
-                    """{"status":"IDLE","default_channel":"$defId","always_hot":$alwaysHot}"""
+                    """{"status":"IDLE","default_channel":"$defId","always_hot":$alwaysHot,"keep_tailscale":$keepTailscale,"device_id":"$deviceId","token_set":$tokenSet,"app_version":"$appVer","versionCode":$verCode,"response":{"status":"idle","peers":0,"speed_down":0},"tailscale":$tailscaleJson}"""
                 }
                 sendHttpResponse(out, "application/json", json.toByteArray(Charsets.UTF_8))
-                clientSock.close()
-                return@withContext
-            }
-
-            // 2b. Live Downlink Signal Probe API (3-Stage Verification)
-            if (rawUri.startsWith("/probe")) {
-                val queryParams = parseQueryParams(rawUri)
-                val chId = queryParams["id"]?.takeIf { it.isNotEmpty() }
-                    ?: queryParams["infohash"]?.takeIf { it.isNotEmpty() }
-                    ?: queryParams["content_id"]?.takeIf { it.isNotEmpty() }
-                    ?: configManager?.defaultChannelId?.takeIf { it.isNotEmpty() }
-                    ?: G2ConfigManager.OPEN_DIAGNOSTIC_INFOHASH
-                val sType = queryParams["type"] ?: if (queryParams.containsKey("infohash") || chId.length == 40) "infohash" else "content_id"
-                val timeout = queryParams["timeout"]?.toLongOrNull() ?: 8000L
-
-                val result = probeStreamSignal(chId, sType, timeout)
-                val resp = """{"success":${result.success},"stage":"${result.stage.name}","channel":"$chId","bytes_read":${result.bytesRead},"bytes_per_sec":${result.bytesPerSec},"speed_kibps":${result.bytesPerSec / 1024},"peers":${result.peers},"delta_downloaded_bytes":${result.deltaDownloadedBytes},"is_media_valid":${result.isMediaValid},"message":"${result.message}"}"""
-                sendHttpResponse(out, "application/json", resp.toByteArray(Charsets.UTF_8))
                 clientSock.close()
                 return@withContext
             }
@@ -404,21 +248,19 @@ class G2StreamProxyServer(
             // 3. Prewarm Trigger API
             if (rawUri.startsWith("/prewarm")) {
                 val queryParams = parseQueryParams(rawUri)
-                val chId = queryParams["id"]?.takeIf { it.isNotEmpty() }
-                    ?: queryParams["infohash"]?.takeIf { it.isNotEmpty() }
-                    ?: queryParams["content_id"]?.takeIf { it.isNotEmpty() }
-                    ?: configManager?.defaultChannelId?.takeIf { it.isNotEmpty() }
-                    ?: ""
-                val sType = queryParams["type"] ?: if (queryParams.containsKey("infohash") || chId.length == 40) "infohash" else "content_id"
+                val chId = queryParams["id"] ?: queryParams["infohash"] ?: queryParams["content_id"] ?: configManager?.defaultChannelId ?: ""
+                val is40Hex = chId.length == 40 && chId.matches(Regex("^[a-fA-F0-9]{40}$"))
+                val sType = queryParams["type"] ?: if (queryParams.containsKey("infohash") || is40Hex) "infohash" else "content_id"
                 val persistent = queryParams["persistent"]?.toBoolean() ?: true
 
                 if (chId.isNotEmpty()) {
-                    configManager?.let { cfg ->
-                        cfg.defaultChannelId = chId
-                        cfg.defaultSourceType = sType
+                    G2OrchestratorService.instance?.let { orch ->
+                        if (!orch.hasTailscaleIp()) {
+                            orch.wakeTailscale(orch)
+                        }
                     }
                     val ok = prewarmStream(chId, sType, persistent)
-                    val resp = if (ok) """{"success":true,"message":"Channel $chId prewarmed successfully","saved":true}"""
+                    val resp = if (ok) """{"success":true,"message":"Channel $chId prewarmed successfully"}"""
                                else """{"success":false,"message":"Failed to prewarm channel"}"""
                     sendHttpResponse(out, "application/json", resp.toByteArray(Charsets.UTF_8))
                 } else {
@@ -430,14 +272,85 @@ class G2StreamProxyServer(
 
             // 4. Config API
             if (rawUri.startsWith("/config")) {
-                val queryParams = parseQueryParams(rawUri)
+                val queryParams = parseQueryParams(rawUri).toMutableMap()
+                if (bodyStr.isNotEmpty()) {
+                    if (bodyStr.trim().startsWith("{")) {
+                        try {
+                            val jsonObj = org.json.JSONObject(bodyStr)
+                            jsonObj.keys().forEach { k ->
+                                queryParams[k] = jsonObj.optString(k)
+                            }
+                        } catch (_: Exception) {}
+                    } else {
+                        parseQueryParams("?$bodyStr").forEach { (k, v) ->
+                            queryParams[k] = v
+                        }
+                    }
+                }
+
+                val remoteIp = try { clientSock.inetAddress?.hostAddress ?: "" } catch (_: Exception) { "" }
+                val isLan = isPrivateSubnet(clientSock)
+
+                val tsParam = queryParams["keep_tailscale"] ?: queryParams["tailscale"] ?: queryParams["auto_tailscale"]
                 configManager?.let { cfg ->
-                    queryParams["default_channel"]?.let { cfg.defaultChannelId = it }
-                    queryParams["default_type"]?.let { cfg.defaultSourceType = it }
+                    queryParams["default_channel"]?.let { if (it.isNotEmpty()) cfg.defaultChannelId = it }
+                    queryParams["default_type"]?.let { if (it.isNotEmpty()) cfg.defaultSourceType = it }
                     queryParams["always_hot"]?.let { cfg.isAlwaysHotStream = (it == "1" || it.equals("true", ignoreCase = true)) }
                     queryParams["auto_boot"]?.let { cfg.isAutoStartBoot = (it == "1" || it.equals("true", ignoreCase = true)) }
+
+                    // device_id override (chỉ nhận từ mạng LAN / private subnet: 10.x, 172.16-31.x, 192.168.x, localhost)
+                    queryParams["device_id"]?.let { newId ->
+                        if (isLan) {
+                            val trimmed = newId.trim()
+                            if (trimmed.isNotEmpty() && trimmed != cfg.deviceId) {
+                                cfg.deviceId = trimmed
+                                AceHubControlService.instance?.webSocketClient?.triggerReconnect()
+                            }
+                        } else {
+                            Log.w(TAG, "Rejected device_id update from non-private IP: $remoteIp")
+                        }
+                    }
+
+                    // control_token (chỉ nhận qua POST và chỉ từ mạng LAN: 10.x, 172.16-31.x, 192.168.x, localhost; bỏ nhận qua GET và bỏ tham số token=)
+                    if (httpMethod == "POST") {
+                        val tokenParam = queryParams["control_token"]
+                        if (!tokenParam.isNullOrEmpty()) {
+                            if (isLan) {
+                                cfg.controlToken = tokenParam.trim()
+                                AceHubControlService.instance?.webSocketClient?.triggerReconnect()
+                            } else {
+                                Log.w(TAG, "Rejected control_token update from non-private IP: $remoteIp")
+                            }
+                        }
+
+                        queryParams["control_server"]?.let { srv ->
+                            if (isLan && srv.isNotEmpty()) {
+                                cfg.controlServerUrl = srv.trim()
+                                AceHubControlService.instance?.webSocketClient?.triggerReconnect()
+                            }
+                        }
+                    }
+
+                    tsParam?.let {
+                        val enableTs = (it == "1" || it.equals("true", ignoreCase = true) || it.equals("on", ignoreCase = true))
+                        cfg.isKeepTailscale = enableTs
+                        G2OrchestratorService.instance?.let { orch ->
+                            if (enableTs) {
+                                orch.startTailscaleWatchdog()
+                            } else {
+                                orch.stopTailscaleWatchdog()
+                            }
+                        }
+                    }
                 }
-                val resp = """{"success":true,"default_channel":"${configManager?.defaultChannelId}","default_type":"${configManager?.defaultSourceType}","always_hot":${configManager?.isAlwaysHotStream},"auto_boot":${configManager?.isAutoStartBoot}}"""
+                val tsIp = G2OrchestratorService.instance?.getTailscaleIp() ?: ""
+                val tsRunning = tsIp.isNotEmpty()
+                val keepTs = configManager?.isKeepTailscale ?: false
+                val devId = configManager?.deviceId ?: ""
+                val tokenSet = configManager?.isTokenSet ?: false
+                val appVer = BuildConfig.VERSION_NAME
+                val verCode = BuildConfig.VERSION_CODE
+                val resp = """{"success":true,"device_id":"$devId","token_set":$tokenSet,"app_version":"$appVer","versionCode":$verCode,"keep_tailscale":$keepTs,"tailscale_running":$tsRunning,"tailscale_ip":"$tsIp","default_channel":"${configManager?.defaultChannelId}","default_type":"${configManager?.defaultSourceType}","always_hot":${configManager?.isAlwaysHotStream},"auto_boot":${configManager?.isAutoStartBoot}}"""
                 sendHttpResponse(out, "application/json", resp.toByteArray(Charsets.UTF_8))
                 clientSock.close()
                 return@withContext
@@ -469,47 +382,117 @@ class G2StreamProxyServer(
                 return@withContext
             }
 
-            // 6. Stream Dispatch: Parse /ace/getstream, /pid/..., /infohash/..., /stream/...
+            // 5b. Restart API
+            if (rawUri.startsWith("/restart")) {
+                val queryParams = parseQueryParams(rawUri)
+                val chId = queryParams["id"] ?: queryParams["infohash"] ?: queryParams["content_id"] ?: configManager?.defaultChannelId ?: ""
+                val is40Hex = chId.length == 40 && chId.matches(Regex("^[a-fA-F0-9]{40}$"))
+                val sType = queryParams["type"] ?: if (queryParams.containsKey("infohash") || is40Hex) "infohash" else "content_id"
+
+                streamMap.values.forEach {
+                    it.dummyReaderJob?.cancel()
+                    it.expireJob?.cancel()
+                    it.statsJob?.cancel()
+                    it.client?.close()
+                    if (!it.commandUrl.isNullOrEmpty()) {
+                        val cUrl = it.commandUrl
+                        scope.launch(Dispatchers.IO) {
+                            try {
+                                val stopConn = URL("${cUrl}/stop").openConnection() as HttpURLConnection
+                                stopConn.connectTimeout = 2000
+                                stopConn.readTimeout = 2000
+                                stopConn.inputStream.read()
+                            } catch (_: Exception) {}
+                        }
+                    }
+                }
+                streamMap.clear()
+                latestActiveStream = null
+
+                // Đảm bảo Tailscale đã sẵn sàng khi khởi động lại
+                G2OrchestratorService.instance?.let { orch ->
+                    if (!orch.hasTailscaleIp()) {
+                        orch.wakeTailscale(orch)
+                    }
+                }
+
+                if (chId.isNotEmpty()) {
+                    scope.launch { prewarmStream(chId, sType, persistent = true) }
+                }
+                sendHttpResponse(out, "application/json", """{"success":true,"message":"AceHub streams restarted successfully"}""".toByteArray(Charsets.UTF_8))
+                clientSock.close()
+                return@withContext
+            }
+
+            // 6. Stream Dispatch: Parse /content/..., /channels/..., /ace/getstream, /pid/..., /infohash/..., /stream/...
             var channelId = ""
             var sourceType = "content_id"
+            var isJsonFormat = false
 
             if (rawUri.contains("?")) {
                 val queryParams = parseQueryParams(rawUri)
-                if (queryParams.containsKey("id")) {
+                if (queryParams.containsKey("infohash")) {
+                    channelId = queryParams["infohash"]!!
+                    sourceType = "infohash"
+                } else if (queryParams.containsKey("id")) {
                     channelId = queryParams["id"]!!
-                    sourceType = "content_id"
+                    val is40Hex = channelId.length == 40 && channelId.matches(Regex("^[a-fA-F0-9]{40}$"))
+                    sourceType = if (is40Hex) "infohash" else "content_id"
                 } else if (queryParams.containsKey("content_id")) {
                     channelId = queryParams["content_id"]!!
                     sourceType = "content_id"
                 } else if (queryParams.containsKey("pid")) {
                     channelId = queryParams["pid"]!!
-                    sourceType = "content_id"
-                } else if (queryParams.containsKey("infohash")) {
-                    channelId = queryParams["infohash"]!!
-                    sourceType = "infohash"
+                    val is40Hex = channelId.length == 40 && channelId.matches(Regex("^[a-fA-F0-9]{40}$"))
+                    sourceType = if (is40Hex) "infohash" else "content_id"
                 }
-            } else if (rawUri.startsWith("/pid/")) {
-                channelId = rawUri.substringAfter("/pid/").substringBefore("/").substringBefore("?")
-                sourceType = "content_id"
-            } else if (rawUri.startsWith("/infohash/")) {
-                channelId = rawUri.substringAfter("/infohash/").substringBefore("/").substringBefore("?")
-                sourceType = "infohash"
-            } else if (rawUri.startsWith("/stream/")) {
-                channelId = rawUri.substringAfter("/stream/").substringBefore("/").substringBefore("?")
-                sourceType = if (channelId.length == 40) "infohash" else "content_id"
+                if (queryParams["format"] == "json") {
+                    isJsonFormat = true
+                }
             }
 
             if (channelId.isEmpty()) {
-                val def = configManager?.defaultChannelId ?: ""
-                if (def.isNotEmpty()) {
-                    channelId = def
-                    sourceType = configManager?.defaultSourceType ?: "infohash"
-                    Log.i(TAG, "Request without explicit channel, serving preserved stream: $channelId")
-                } else {
-                    channelId = G2ConfigManager.OPEN_DIAGNOSTIC_INFOHASH
-                    sourceType = "infohash"
-                    Log.i(TAG, "Request without explicit channel and no default set, serving Open Diagnostic Stream: $channelId")
+                val pathSegment = when {
+                    rawUri.startsWith("/content/") -> rawUri.substringAfter("/content/")
+                    rawUri.startsWith("/channels/") -> rawUri.substringAfter("/channels/")
+                    rawUri.startsWith("/channel/") -> rawUri.substringAfter("/channel/")
+                    rawUri.startsWith("/pid/") -> rawUri.substringAfter("/pid/")
+                    rawUri.startsWith("/infohash/") -> rawUri.substringAfter("/infohash/")
+                    rawUri.startsWith("/stream/") -> rawUri.substringAfter("/stream/")
+                    rawUri.startsWith("/hls/") -> rawUri.substringAfter("/hls/")
+                    else -> ""
                 }
+                if (pathSegment.isNotEmpty()) {
+                    channelId = pathSegment.substringBefore("/").substringBefore("?").substringBefore(".")
+                    val is40Hex = channelId.length == 40 && channelId.matches(Regex("^[a-fA-F0-9]{40}$"))
+                    sourceType = if (rawUri.startsWith("/infohash/") || is40Hex) "infohash" else "content_id"
+                }
+            }
+
+            if (channelId.isEmpty()) {
+                sendHttpError(out, 400, "Missing id or infohash parameter")
+                clientSock.close()
+                return@withContext
+            }
+
+            // Hỗ trợ handshake JSON cho Apple TV / Samsung TV (khi gọi /ace/manifest.m3u8?...&format=json)
+            if (isJsonFormat) {
+                val isDefault = (channelId == configManager?.defaultChannelId)
+                scope.launch {
+                    try {
+                        getOrCreateStream(channelId, sourceType, persistent = isDefault && (configManager?.isAlwaysHotStream == true))
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Background warm on manifest request failed: ${e.message}")
+                    }
+                }
+                val streamParam = if (sourceType == "infohash") "infohash=$channelId" else "id=$channelId"
+                val streamUrl = "http://$resolvedHost/ace/getstream?$streamParam"
+                val statUrl = "http://$resolvedHost/status"
+                val cmdUrl = "http://$resolvedHost"
+                val manifestJson = """{"response":{"playback_url":"$streamUrl","stat_url":"$statUrl","command_url":"$cmdUrl"}}"""
+                sendHttpResponse(out, "application/json; charset=utf-8", manifestJson.toByteArray(Charsets.UTF_8))
+                clientSock.close()
+                return@withContext
             }
 
             val isDefault = (channelId == configManager?.defaultChannelId)
@@ -520,17 +503,6 @@ class G2StreamProxyServer(
                 return@withContext
             }
 
-            // AUTO-PERSIST: Only persist active stream AFTER engine confirms creation, and exclude diagnostic benchmark
-            if (channelId != G2ConfigManager.OPEN_DIAGNOSTIC_INFOHASH) {
-                configManager?.let { cfg ->
-                    if (cfg.defaultChannelId != channelId) {
-                        cfg.defaultChannelId = channelId
-                        cfg.defaultSourceType = sourceType
-                        AppLogger.i("CONFIG", "💾 Đã tự động ghi nhớ luồng cũ vào bộ nhớ: $channelId ($sourceType)")
-                    }
-                }
-            }
-
             synchronized(stream) {
                 stream.expireJob?.cancel()
                 stream.expireJob = null
@@ -539,7 +511,7 @@ class G2StreamProxyServer(
                 stream.clientCount++
             }
 
-            Log.i(TAG, "Streaming $channelId to client ${clientSock.inetAddress.hostAddress} (active clients=${stream.clientCount})...")
+            Log.i(TAG, "Streaming $channelId ($sourceType) to client ${clientSock.inetAddress.hostAddress} (active clients=${stream.clientCount})...")
 
             // Send 200 OK headers
             val headerStr = "HTTP/1.1 200 OK\r\n" +
@@ -550,7 +522,7 @@ class G2StreamProxyServer(
             out.write(headerStr.toByteArray(Charsets.UTF_8))
             out.flush()
 
-            // Stream data from raw playback URL
+            // Stream data from raw playback URL with preamble stripping for Apple TV / Samsung TV
             clientSock.soTimeout = 0
             var sourceConn: HttpURLConnection? = null
             try {
@@ -558,13 +530,39 @@ class G2StreamProxyServer(
                 sourceConn = url.openConnection() as HttpURLConnection
                 sourceConn.instanceFollowRedirects = true
                 sourceConn.connectTimeout = 10000
-                sourceConn.readTimeout = 15000
+                sourceConn.readTimeout = 0 // Keep stream alive during P2P jitter
                 val inStream = sourceConn.inputStream
 
                 val buffer = ByteArray(65536)
                 var bytesRead: Int
+                var firstPacket = true
+
                 while (inStream.read(buffer).also { bytesRead = it } != -1) {
-                    out.write(buffer, 0, bytesRead)
+                    if (firstPacket) {
+                        // Scan for first 0x47 TS sync byte
+                        var syncIdx = -1
+                        for (i in 0 until bytesRead) {
+                            if (buffer[i] == 0x47.toByte()) {
+                                if (i + 188 < bytesRead && buffer[i + 188] == 0x47.toByte()) {
+                                    syncIdx = i
+                                    break
+                                } else if (i + 188 >= bytesRead) {
+                                    syncIdx = i
+                                    break
+                                }
+                            }
+                        }
+                        if (syncIdx > 0) {
+                            Log.i(TAG, "Stripped $syncIdx bytes preamble before first 0x47 sync byte for client")
+                            out.write(buffer, syncIdx, bytesRead - syncIdx)
+                        } else {
+                            out.write(buffer, 0, bytesRead)
+                        }
+                        out.flush()
+                        firstPacket = false
+                    } else {
+                        out.write(buffer, 0, bytesRead)
+                    }
                 }
             } catch (e: Exception) {
                 Log.d(TAG, "Client disconnected or pipe closed: ${e.message}")
@@ -665,7 +663,7 @@ class G2StreamProxyServer(
             delay(500) // Allow engine to complete teardown
         }
 
-        // 1. Primary Solver: AceStream Telnet API (Standard Protocol Handshake, 0-Transcode, 4K UHD Support)
+        // 1. Primary Solver: AceStream Partner Telnet API (AUTH 0, 100% 0 Ads, 0 Premium, 4K UHD Support)
         val apiClient = AceApiClient(host = "127.0.0.1", apiPort = apiPort) { peers, speed, downloaded ->
             streamMap[channelId]?.let {
                 it.peers = peers
@@ -821,11 +819,40 @@ class G2StreamProxyServer(
         return map
     }
 
-    private fun renderDashboardHtml(): String {
+    private fun isPrivateSubnet(clientSock: Socket): Boolean {
+        try {
+            val addr = clientSock.inetAddress ?: return false
+            if (addr.isLoopbackAddress || addr.isSiteLocalAddress) return true
+            val host = addr.hostAddress ?: return false
+            val clean = host.removePrefix("/").substringBefore("%").trim().removePrefix("::ffff:")
+            if (clean == "127.0.0.1" || clean == "::1" || clean == "localhost" || clean == "0:0:0:0:0:0:0:1") return true
+            val parts = clean.split(".")
+            if (parts.size == 4) {
+                val b0 = parts[0].toIntOrNull() ?: return false
+                val b1 = parts[1].toIntOrNull() ?: return false
+                val b2 = parts[2].toIntOrNull() ?: return false
+                val b3 = parts[3].toIntOrNull() ?: return false
+                if (b0 !in 0..255 || b1 !in 0..255 || b2 !in 0..255 || b3 !in 0..255) return false
+                // Loopback 127.0.0.0/8
+                if (b0 == 127) return true
+                // 10.0.0.0/8
+                if (b0 == 10) return true
+                // 172.16.0.0/12 (172.16.0.0 - 172.31.255.255)
+                if (b0 == 172 && b1 in 16..31) return true
+                // 192.168.0.0/16
+                if (b0 == 192 && b1 == 168) return true
+            }
+        } catch (_: Exception) {}
+        return false
+    }
+
+    private fun renderDashboardHtml(host: String): String {
         val active = latestActiveStream
         val defId = configManager?.defaultChannelId ?: ""
         val alwaysHot = configManager?.isAlwaysHotStream ?: false
-        val autoBoot = configManager?.isAutoStartBoot ?: true
+            val autoBoot = configManager?.isAutoStartBoot ?: true
+        val keepTs = configManager?.isKeepTailscale ?: false
+        val tsIp = G2OrchestratorService.instance?.getTailscaleIp() ?: ""
 
         val statusBadge = if (active != null) {
             """<span style="background:#16a34a;color:#fff;padding:4px 10px;border-radius:9999px;font-weight:600;">ACTIVE (${active.peers} Peers | ${active.speedKbps} KB/s)</span>"""
@@ -839,7 +866,7 @@ class G2StreamProxyServer(
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AceSport G2 Hub - Orchestrator 8000</title>
+    <title>AceHub - Orchestrator 8000</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0b0f19; color: #f1f5f9; margin: 0; padding: 20px; }
         .card { background: #1e293b; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3); border: 1px solid #334155; }
@@ -857,29 +884,31 @@ class G2StreamProxyServer(
     <div style="max-width: 800px; margin: 0 auto;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
             <div>
-                <h1 style="margin-bottom:4px;">AceStream Hub</h1>
-                <p style="margin:0;color:#94a3b8;">Cổng phát luồng Universal Proxy 24/7 &bull; Port 8000</p>
+                <h1 style="margin-bottom:4px;">AceHub Streaming Orchestrator</h1>
+                <p style="margin:0;color:#94a3b8;">TV Box Streaming Hub &bull; <span class="auto-host">$host</span> &bull; Cổng Orchestrator 24/7</p>
             </div>
             <div>$statusBadge</div>
         </div>
 
         <div class="card">
             <h2>Trạng Thái Trực Chiến</h2>
-            <div class="row"><span>Tự động khởi động cùng G2 (Boot):</span><strong>${if (autoBoot) "BẬT (Active)" else "TẮT"}</strong></div>
+            <div class="row"><span>Tự động khởi động cùng Box (Boot):</span><strong>${if (autoBoot) "BẬT (Active)" else "TẮT"}</strong></div>
             <div class="row"><span>Luôn mở sẵn luồng (Always Hot):</span><strong>${if (alwaysHot) "BẬT (Active 24/7)" else "TẮT (On-Demand)"}</strong></div>
+            <div class="row"><span>Tự động giữ kết nối Tailscale (Watchdog):</span><strong>${if (keepTs) "BẬT (Active 24/7 - ${if (tsIp.isNotEmpty()) tsIp else "Đang kết nối"})" else "TẮT (Không can thiệp)"}</strong></div>
             <div class="row"><span>Kênh mặc định:</span><span style="font-family:monospace;color:#38bdf8;">$defId</span></div>
             <div class="row"><span>Luồng đang chạy:</span><span style="font-family:monospace;color:#4ade80;">${active?.channelId ?: "Không có"}</span></div>
             <div class="row"><span>Kết nối P2P Swarm:</span><strong>${active?.peers ?: 0} Peers &bull; ${active?.speedKbps ?: 0} KB/s</strong></div>
             <div class="row"><span>Số thiết bị đang xem:</span><strong>${active?.clientCount ?: 0} Client(s)</strong></div>
             <div style="margin-top: 15px; display:flex; gap:10px;">
                 <a href="/status" class="btn" target="_blank">Xem JSON Status</a>
+                <a href="/config" class="btn" target="_blank" style="background:#059669;">Xem JSON Config</a>
                 <a href="/stop" class="btn btn-stop">Dừng Luồng</a>
             </div>
         </div>
 
         <div class="card">
-            <h2>Cấu Hình Kênh Mặc Định (Always Hot)</h2>
-            <p style="color:#94a3b8;font-size:14px;">Khi G2 khởi động hoặc sau khi xem xong kênh khác, hệ thống sẽ tự động mở sẵn kênh này để xem tức thì.</p>
+            <h2>Cấu Hình Kênh Mặc Định &amp; Tailscale</h2>
+            <p style="color:#94a3b8;font-size:14px;">Tùy chỉnh thông số trạm phát và cơ chế tự động giữ kết nối Tailscale.</p>
             <form action="/config" method="GET">
                 <label style="display:block;margin-bottom:6px;font-weight:600;">Mã Kênh (Infohash hoặc Content ID):</label>
                 <input type="text" name="default_channel" value="$defId" placeholder="Nhập 40 ký tự infohash hoặc id">
@@ -890,6 +919,8 @@ class G2StreamProxyServer(
                 </select>
                 <br>
                 <label><input type="checkbox" name="always_hot" value="true" ${if (alwaysHot) "checked" else ""}> Luôn giữ luồng này mở sẵn 24/7 (Hot Stream)</label>
+                <br>
+                <label style="margin-top:8px;display:inline-block;"><input type="checkbox" name="keep_tailscale" value="true" ${if (keepTs) "checked" else ""}> Tự động giữ kết nối Tailscale 24/7 (Watchdog thức Tailscale nếu mất kết nối)</label>
                 <br><br>
                 <button type="submit" class="btn">Lưu Cấu Hình</button>
             </form>
@@ -897,11 +928,30 @@ class G2StreamProxyServer(
 
         <div class="card">
             <h2>Đường Dẫn Phát Cho Thiết Bị Khác (LAN)</h2>
-            <p style="color:#94a3b8;font-size:14px;">Cổng phát chuẩn cho Samsung Smart TV, Apple TV, PC VLC qua G2:</p>
-            <div class="code-box">http://192.168.1.172:8000/ace/getstream?infohash=$defId</div>
-            <div class="code-box">http://192.168.1.172:8000/infohash/$defId/stream.mp4</div>
+            <p style="color:#94a3b8;font-size:14px;">Cổng phát chuẩn cho Samsung Smart TV, Apple TV, PC VLC qua Box:</p>
+            <div id="link-getstream" class="code-box">http://$host/ace/getstream?infohash=$defId</div>
+            <div id="link-mp4" class="code-box">http://$host/infohash/$defId/stream.mp4</div>
         </div>
     </div>
+    <script>
+        (function() {
+            try {
+                var curHost = window.location.host;
+                if (curHost) {
+                    var els = document.querySelectorAll('.auto-host');
+                    for (var i = 0; i < els.length; i++) {
+                        els[i].textContent = curHost;
+                    }
+                    var def = "$defId";
+                    var origin = window.location.origin;
+                    var gLink = document.getElementById('link-getstream');
+                    if (gLink) gLink.textContent = origin + '/ace/getstream?infohash=' + def;
+                    var mLink = document.getElementById('link-mp4');
+                    if (mLink) mLink.textContent = origin + '/infohash/' + def + '/stream.mp4';
+                }
+            } catch(e) {}
+        })();
+    </script>
 </body>
 </html>
         """.trimIndent()

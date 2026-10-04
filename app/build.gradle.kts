@@ -11,8 +11,8 @@ android {
         applicationId = "vn.lienson.acesport.g2probe"
         minSdk = 24
         targetSdk = 34
-        versionCode = 9
-        versionName = "1.0.8"
+        versionCode = 21
+        versionName = "1.4.3"
 
         ndk {
             abiFilters.addAll(listOf("armeabi-v7a"))
@@ -22,22 +22,15 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("debug")
         }
         debug {
             isMinifyEnabled = false
             applicationIdSuffix = ""
-        }
-    }
-
-    applicationVariants.all {
-        outputs.all {
-            val output = this as? com.android.build.gradle.internal.api.BaseVariantOutputImpl
-            output?.outputFileName = "aceHub-v${defaultConfig.versionName}.apk"
         }
     }
 
