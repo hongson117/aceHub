@@ -1,0 +1,11 @@
+[
+  {
+    "id": "default",
+    "match_hosts": [],
+    "headers": {},
+    "cookies": "",
+    "ignore_query_params": [],
+    "channel_key": null,
+    "resolver": null
+  }
+]

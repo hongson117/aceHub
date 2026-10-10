@@ -1,0 +1,159 @@
+# AceHub Hybrid Gateway - Docker edition v1.2 (REFERENCE)
+# - Tên image AceStream Engine và các flag CLI của engine là CẦN XÁC MINH (xem spec mục 7.2, 12).
+# - Mọi giới hạn tài nguyên là ƯỚC TÍNH ban đầu, chỉnh sau khi đo (spec mục 11.1).
+# Dùng: cp .env.example .env && sửa .env && docker compose up -d
+
+name: acehub
+
+services:
+  acehub:
+    # Image build từ repo gateway (xem gateway/Dockerfile). Pin tag cụ thể, không dùng latest.
+    image: ${ACEHUB_IMAGE:-acehub/gateway:1.2.0}
+    # build:
+    #   context: ../../gateway-src
+    #   dockerfile: Dockerfile
+    container_name: acehub
+    restart: unless-stopped
+    init: true
+    env_file:
+      - .env
+    environment:
+      # Cố định trong compose, không lấy từ input client (spec mục 8.3).
+      ACEHUB_ACE_BASE_URL: "http://acestream:6878"
+      ACEHUB_LISTEN_ADDR: "0.0.0.0:8000"
+      TZ: "${TZ:-Asia/Bangkok}"
+    ports:
+      # Bind vào IP LAN của host thay vì 0.0.0.0 khi có thể (spec mục 7.3, 8.1).
+      - "${ACEHUB_BIND_IP:-0.0.0.0}:${ACEHUB_PORT:-8000}:8000/tcp"
+    networks:
+      - ace_internal
+      - egress
+    depends_on:
+      acestream:
+        # Không chờ healthy: AceHub phải tự chịu được engine down (Direct vẫn chạy).
+        condition: service_started
+    mem_limit: ${ACEHUB_MEM_LIMIT:-768m}
+    memswap_limit: ${ACEHUB_MEM_LIMIT:-768m}
+    cpus: ${ACEHUB_CPUS:-2.0}
+    pids_limit: 512
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    volumes:
+      - ./config:/etc/acehub:ro
+      - acehub_data:/var/lib/acehub
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/acehub", "healthcheck"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+    stop_grace_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  acestream:
+    # BẮT BUỘC đặt trong .env. Ví dụ community image ở spec mục 7.2 - CẦN XÁC MINH, pin tag/digest.
+    image: ${ACESTREAM_IMAGE:?Set ACESTREAM_IMAGE in .env - see spec 7.2}
+    container_name: acehub-acestream
+    restart: unless-stopped
+    init: true
+    # Flag CLI của engine - CẦN XÁC MINH với image/phiên bản đã chọn (spec mục 5.5):
+    # command:
+    #   - "--client-console"
+    #   - "--bind-all"
+    #   - "--cache-dir"
+    #   - "/acestream-cache"
+    #   - "--live-cache-type"
+    #   - "disk"
+    #   - "--live-cache-size"
+    #   - "268435456"
+    environment:
+      TZ: "${TZ:-Asia/Bangkok}"
+      ENGINE_HC_URL: "${ENGINE_HC_URL:-http://127.0.0.1:6878/webui/api/service?method=get_version&format=json}"
+      ENGINE_HC_KILL_AFTER: "${ENGINE_HC_KILL_AFTER:-4}"
+    # KHÔNG publish 6878. Chỉ acehub truy cập qua mạng ace_internal.
+    # Cổng P2P (tùy chọn, mặc định tắt; số cổng CẦN XÁC MINH, spec mục 7.2):
+    # ports:
+    #   - "8621:8621/tcp"
+    #   - "8621:8621/udp"
+    networks:
+      - ace_internal
+      - egress
+    mem_limit: ${ACESTREAM_MEM_LIMIT:-1536m}
+    memswap_limit: ${ACESTREAM_MEM_LIMIT:-1536m}
+    cpus: ${ACESTREAM_CPUS:-2.0}
+    pids_limit: 1024
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - acestream_cache:/acestream-cache
+      - ./engine/healthcheck.sh:/usr/local/bin/acehub-engine-healthcheck.sh:ro
+    # Phương án tmpfs thay cho volume (tính vào mem_limit của container, spec mục 7.6):
+    # tmpfs:
+    #   - /acestream-cache:size=512m
+    security_opt:
+      - no-new-privileges:true
+    labels:
+      autoheal: "true"
+    healthcheck:
+      # Script tự kill PID 1 sau N lần lỗi liên tiếp -> container exit -> restart policy (spec mục 5.4).
+      test: ["CMD", "sh", "/usr/local/bin/acehub-engine-healthcheck.sh"]
+      interval: 20s
+      timeout: 8s
+      retries: 3
+      start_period: 90s
+    stop_grace_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Tùy chọn: chỉ bật khi cần (docker compose --profile autoheal up -d).
+  # RỦI RO: mount docker.sock = quyền tương đương root trên host (spec mục 8.6).
+  autoheal:
+    profiles: ["autoheal"]
+    # Image CẦN XÁC MINH và pin tag/digest trong .env (AUTOHEAL_IMAGE).
+    image: ${AUTOHEAL_IMAGE:-willfarrell/autoheal:latest}
+    container_name: acehub-autoheal
+    restart: unless-stopped
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: "autoheal"
+      AUTOHEAL_INTERVAL: "15"
+      AUTOHEAL_START_PERIOD: "120"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    network_mode: none
+    mem_limit: 64m
+    cpus: 0.25
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+networks:
+  # Mạng nội bộ không có đường ra Internet: dùng cho API acehub <-> engine.
+  ace_internal:
+    internal: true
+  # Mạng bridge riêng của stack, cho egress Internet (CDN, P2P swarm) và publish cổng 8000.
+  egress:
+    driver: bridge
+
+volumes:
+  acehub_data:
+  acestream_cache:
