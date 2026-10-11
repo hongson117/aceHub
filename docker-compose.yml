@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   acehub:
-    image: ghcr.io/hongson117/acehub:latest
+    image: ghcr.io/hongson117/acehub:1.4.5
     container_name: acehub
     restart: unless-stopped
     # host mode enables direct P2P socket performance and instant broadcast in local LAN

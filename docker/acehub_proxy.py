@@ -119,7 +119,7 @@ class AceTelnetSession:
                 self.expire_timer = None
 
             # 1. LOADASYNC
-            is_infohash = (source_type == "infohash" or len(channel_id) == 40)
+            is_infohash = (source_type == "infohash")
             if is_infohash:
                 load_cmd = f"LOADASYNC 0 INFOHASH {channel_id} 0 0 0\r\n"
             else:
@@ -136,6 +136,8 @@ class AceTelnetSession:
                     break
                 line = line.strip()
                 if line.startswith("LOADRESP"):
+                    if is_infohash and '"status": 100' in line:
+                        break  # live infohash: LOADASYNC can't fetch metadata, START still works
                     if '"status": 100' in line or '"status": 0' in line:
                         raise RuntimeError(f"Cannot load transport file: {line}")
                     # Parse infohash if available
@@ -147,7 +149,7 @@ class AceTelnetSession:
 
             # 2. START command
             target = canonical_hash if canonical_hash else channel_id
-            if len(target) == 40:
+            if canonical_hash:
                 start_cmd = f"START INFOHASH {target} 0 0 0 0 output_format=http\r\n"
             else:
                 start_cmd = f"START PID {channel_id} 0 output_format=http\r\n"
@@ -343,7 +345,7 @@ class AceHubHandler(BaseHTTPRequestHandler):
 
         data = {
             "name": "aceHub Docker / Home Server Engine",
-            "version": "1.0.0",
+            "version": "1.4.5",
             "status": "ACTIVE" if active else "IDLE",
             "channel": active,
             "peers": peers,
