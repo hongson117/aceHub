@@ -1,5 +1,21 @@
 # AceHub (`AceHub-v1.4.4.apk`)
 
+## ⚠️ Thông báo dọn dẹp bản Docker cũ (11/10/2026)
+
+- **Tất cả image Docker cũ trên ghcr đã bị xoá** (các tag 1.0.x, 1.3.x, 1.4.3, 1.4.4, 1.4.5, 1.4 và các tag `sha-*`). Lệnh `docker pull` với các tag đó sẽ báo lỗi *not found*.
+- **Bản Docker duy nhất hiện có: `ghcr.io/hongson117/acehub:1.2.3`** (cũng là `:latest`), chỉ chạy trên máy x86/amd64.
+- Lý do: bản cũ coi mọi mã dài 40 ký tự là infohash nên link `/live?id=<content_id>` không mở được (lỗi 502). Bản 1.2.3 đã sửa lỗi này và sửa luôn link `/live?infohash=`.
+- Release `v1.4.5` bị đánh số nhầm đã xoá. Bản Docker từ nay đánh số riêng với tag `docker-vX.Y.Z`.
+- **Bản Android (release v1.4.3, v1.4.4 và file APK) giữ nguyên, không bị ảnh hưởng.**
+
+### Cách cập nhật
+1. Sửa `docker-compose.yml` để image là `ghcr.io/hongson117/acehub:1.2.3` (hoặc `:latest`).
+2. Chạy `docker compose pull && docker compose up -d`.
+3. Kiểm tra `http://<IP>:8000/stat` thấy `"version": "1.2.3"`.
+4. Link xem: `http://<IP>:8000/live?id=<content_id>` hoặc `http://<IP>:8000/live?infohash=<infohash>`.
+
+Không có mạng: tải [acehub-docker-1.2.3-amd64.tar.gz](https://github.com/hongson117/aceHub/releases/download/docker-v1.2.3/acehub-docker-1.2.3-amd64.tar.gz) rồi chạy `docker load -i acehub-docker-1.2.3-amd64.tar.gz`.
+
 > **Trạm phát luồng AceStream nội bộ (Headless LAN Stream Gateway) siêu nhẹ cho Android TV Box & Mạng gia đình**
 
 [![Release: v1.4.4](https://img.shields.io/badge/Release-v1.4.4-blue.svg)](https://github.com/hongson117/aceHub/releases/tag/v1.4.4)
