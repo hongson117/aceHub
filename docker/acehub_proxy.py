@@ -345,7 +345,7 @@ class AceHubHandler(BaseHTTPRequestHandler):
 
         data = {
             "name": "aceHub Docker / Home Server Engine",
-            "version": "1.4.5",
+            "version": "1.2.3",
             "status": "ACTIVE" if active else "IDLE",
             "channel": active,
             "peers": peers,

@@ -5,7 +5,7 @@ FROM smarquezp/docker-acestream-ubuntu-home:latest
 
 LABEL maintainer="hongson117" \
       description="aceHub: Home Server 0-Transcode P2P Streaming Engine" \
-      version="1.4.5" \
+      version="1.2.3" \
       org.opencontainers.image.source="https://github.com/hongson117/aceHub" \
       org.opencontainers.image.title="aceHub Docker Engine" \
       org.opencontainers.image.description="Unified P2P Live Sports Streamer for Home Server & NAS"
